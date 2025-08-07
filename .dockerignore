@@ -1,0 +1,43 @@
+# .dockerignore file to exclude unnecessary files from Docker build context
+
+# Git
+.git
+.gitignore
+
+# Maven
+target/
+!target/reactive-*.jar
+.mvn/wrapper/maven-wrapper.jar
+
+# IDE
+.idea/
+.vscode/
+*.iws
+*.iml
+*.ipr
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+Dockerfile
+.dockerignore
+docker-compose.yml
+
+# Kubernetes
+k8s-*.yaml
+ingress.yaml
+redis-deployment.yaml
+
+# Documentation
+*.md
+HELP.md
+
+# Application specific
+.env
+.env.local

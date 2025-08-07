@@ -1,0 +1,250 @@
+h1. Understanding Your AntiSamy Configuration File
+
+This document explains the various sections and configurations within your AntiSamy XML policy file. AntiSamy is a library designed to sanitize user-supplied HTML/CSS, preventing XSS (Cross-Site Scripting) and other injection attacks.
+
+h2. Directives
+
+Directives are global settings that control the overall behavior of the AntiSamy scanner.
+
+|| Directive Name || Value || Explanation ||
+| omitXmlDeclaration | true | When set to {{true}}, AntiSamy will not include the XML declaration (e.g., {{<?xml version="1.0" encoding="UTF-8"?>}}) in its output. This is common for HTML fragments. |
+| omitDoctypeDeclaration | true | When set to {{true}}, AntiSamy will not include the DOCTYPE declaration (e.g., {{<!DOCTYPE html ...>}}) in its output. Useful when embedding sanitized HTML into an existing page. |
+| maxInputSize | 20000 | Specifies the maximum allowed size of the input HTML string in bytes. Input larger than this will be rejected to prevent denial-of-service attacks with overly large inputs. Here, it's set to 20,000 bytes (approx 20KB). |
+| formatOutput | true | When set to {{true}}, AntiSamy will attempt to "pretty print" the output HTML, making it more human-readable with proper indentation and line breaks. |
+| embedStyleSheets | false | {warning} This directive controls whether external stylesheets referenced via {{<link>}} tags are downloaded and embedded directly into the HTML. Setting this to {{false}} is generally safer as AntiSamy, by itself, cannot validate the *content* of remote stylesheets after the initial scan if they change. The comment "remember, this won't work for relative URIs - AntiSamy doesn't know anything about the URL or your web structure" is crucial. If {{true}}, you'd need to ensure base URLs are correctly handled or only absolute, trusted URLs are allowed for stylesheets. |
+
+h2. Common Regular Expressions ({{<common-regexps>}})
+
+This section defines named regular expressions that are reused throughout the policy file for validating attribute values and CSS properties. This promotes consistency and maintainability.
+
+|| Regexp Name || Value (Regular Expression) || Explanation ||
+| colorName | {code}(aqua|black|blue|fuchsia|gray|grey|green|lime|maroon|navy|olive|purple|red|silver|teal|white|yellow){code} | Matches one of the 16 standard HTML/CSS color names. |
+| colorCode | {code}(#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})){code} | Matches HTML/CSS hexadecimal color codes (e.g., {{#FFFFFF}} or {{#FFF}}). |
+| anything | {code}.*{code} | Matches any sequence of characters (zero or more). Use with caution as it's very permissive. |
+| numberOrPercent | {code}(\d)+(%{0,1}){code} | Matches a number (one or more digits) optionally followed by a percent sign (e.g., {{100}}, {{50%}}). |
+| paragraph | {code}[\p{L}\p{N},'.\s\-_()&amp;;]*{code} | Matches typical characters found in a paragraph of text, including Unicode letters ({{<code>\p{L}</code>}}), numbers ({{<code>\p{N}</code>}}), common punctuation, spaces, hyphens, underscores, parentheses, and ampersands. |
+| htmlId | {code}[a-zA-Z0-9:\-_.]+{code} | Matches valid characters for an HTML {{id}} attribute (letters, numbers, colon, hyphen, underscore, period). Must be at least one character. |
+| htmlTitle | {code}[\p{L}\p{N}\s\-_',:\[\]!.\/\\\(\)&amp;]*{code} | Matches characters suitable for an HTML {{title}} attribute. Similar to {{paragraph}} but allows more punctuation like brackets and slashes. The comment "force non-empty with a '+' at the end instead of '*'" suggests that if you need to ensure the title is not empty, you should change the trailing {{*}} to {{+}}. |
+| htmlClass | {code}[a-zA-Z0-9\s,\-_]+{code} | Matches valid characters for an HTML {{class}} attribute (letters, numbers, spaces, commas, hyphens, underscores). Allows multiple class names separated by spaces. |
+| onsiteURL | {code}^(?!//)(?![\p{L}\p{N}\\.\#@\$%\+&amp;;\-_~,\?=/!]*(&amp;colon))[\p{L}\p{N}\\.\#@\$%\+&amp;;\-_~,\?=/!]*{code} | A complex regex intended to match URLs considered "on-site" or relative. It tries to prevent protocol-relative URLs ({{//example.com}}) and URLs containing a colon (which might indicate an offsite protocol like {{javascript:}} or {{http:}} within an unexpected context). Allows common URL characters. |
+| offsiteURL | {code}(\s)*((ht|f)tp(s?)://|mailto:)[\p{L}\p{N}]+[\p{L}\p{N}\p{Zs}\.\#@\$%\+&amp;;:\-_~,\?=/!\(\)]*(\s)*{code} | Matches absolute URLs starting with {{http://}}, {{https://}}, {{ftp://}}, {{ftps://}}, or {{mailto:}}. Allows a wide range of characters typically found in URLs. {{<code>\p{Zs}</code>}} matches various space separators. |
+| boolean | {code}(true|false){code} | Matches the literal strings {{true}} or {{false}}. |
+| singlePrintable | {code}[a-zA-Z0-9]{1}{code} | Matches a single alphanumeric character. The comment "<code>\w</code> allows the '_' character" implies this was chosen to specifically exclude underscores. |
+| cssElementSelector | {code}[a-zA-Z0-9\-_]+|\*{code} | Matches a CSS element selector (e.g., {{div}}, {{my-element}}, {{*}} for universal selector). |
+| cssElementExclusion | {code}{code} (empty) | Intended to list CSS element selectors that are *not* valid. Currently empty, meaning no exclusions by default. |
+| cssClassSelector | {code}\.[a-zA-Z0-9\-_]+{code} | Matches a CSS class selector (e.g., {{.my-class}}, {{.another_class}}). |
+| cssClassExclusion | {code}{code} (empty) | Intended to list CSS class selectors that are *not* valid. Currently empty. |
+| cssIDSelector | {code}#[a-zA-Z0-9\-_]+{code} | Matches a CSS ID selector (e.g., {{#my-id}}, {{#section-1}}). |
+| cssIDExclusion | {code}{code} (empty) | Intended to list CSS ID selectors that are *not* valid. The comment "FIXME: What should the default be to avoid div hijacking? *?" suggests consideration for security implications of allowing any ID. |
+| cssPseudoElementSelector | {code}:[a-zA-Z0-9\-_]+{code} | Matches CSS pseudo-element selectors (e.g., {{:before}}, {{:first-child}}). Note: This regex covers both pseudo-classes and pseudo-elements based on the single colon. CSS3 distinguishes them ({{::before}} vs {{:hover}}). |
+| cssPseudoElementExclusion | {code}{code} (empty) | Intended to list CSS pseudo-element selectors that are *not* valid. Currently empty. |
+| cssAttributeSelector | {code}\[[a-zA-Z0-9\-_]+((=|~=|\|=){1}[a-zA-Z0-9\-_]+){1}\]{code} | Matches CSS attribute selectors (e.g., {{[type="text"]}}, {{[lang|="en"]}}). |
+| cssAttributeExclusion | {code}{code} (empty) | Intended to list CSS attribute selectors that are *not* valid. Currently empty. |
+| cssOnsiteUri | {code}url\(([\p{L}\p{N}\\/\.\?=\#&amp;;\-_~]+|\#(\w)+)\){code} | Matches CSS {{url()}} values for on-site/relative resources, or fragment identifiers (e.g., {{url(image.png)}}, {{url(#gradient)}}). |
+| cssOffsiteUri | {code}url\((\s)*((ht|f)tp(s?)://)[\p{L}\p{N}]+[~\p{L}\p{N}\p{Zs}\-_\.@#$%&amp;;:,\?=/\+!]*(\s)*\){code} | Matches CSS {{url()}} values for off-site resources, requiring {{http(s)://}} or {{ftp(s)://}} protocols. |
+| cssIdentifier | {code}[a-zA-Z0-9\-_]+{code} | Matches a generic CSS identifier (e.g., for counter names, custom property names if they were supported this way). |
+| cssCommentText | {code}[\p{L}\p{N}\-_,\/\\\.\s\(\)!\?\=\$#%\^&amp;:&quot;']+{code} | Matches characters allowed within CSS comments ({{<code>/* ... */</code>}}). |
+| integer | {code}(-|\+)?[0-9]+{code} | Matches an integer, optionally signed (e.g., {{100}}, {{-5}}, {{+20}}). |
+| positiveInteger | {code}(\+)?[0-9]+{code} | Matches a positive integer, optionally with a {{+}} sign (e.g., {{100}}, {{+20}}). |
+| number | {code}(-|\+)?([0-9]+(\.[0-9]+)?){code} | Matches a number, optionally signed, and can include a decimal part (e.g., {{100}}, {{-5.5}}, {{+20.0}}). |
+| angle | {code}(-|\+)?([0-9]+(\.[0-9]+)?)(deg|grad|rad){code} | Matches an angle value with units {{deg}} (degrees), {{grad}} (gradians), or {{rad}} (radians) (e.g., {{90deg}}, {{-1.5rad}}). |
+| time | {code}([0-9]+(\.[0-9]+)?)(ms|s){code} | Matches a time value with units {{ms}} (milliseconds) or {{s}} (seconds) (e.g., {{100ms}}, {{2.5s}}). |
+| frequency | {code}([0-9]+(\.[0-9]+)?)(hz|khz){code} | Matches a frequency value with units {{hz}} (Hertz) or {{khz}} (Kilohertz) (e.g., {{50hz}}, {{2khz}}). |
+| length | {code}((-|\+)?0|(-|\+)?([0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?)(rem|vw|vh|em|ex|px|in|cm|mm|pt|pc)){code} | Matches a length value, optionally signed, with common CSS units ({{rem}}, {{vw}}, {{vh}}, {{em}}, {{ex}}, {{px}}, {{in}}, {{cm}}, {{mm}}, {{pt}}, {{pc}}). Also allows scientific notation for the number part (e.g., {{1.2e-2px}}). Handles {{0}} as a special case without a unit. |
+| positiveLength | {code}((\+)?0|(\+)?([0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?)(rem|vw|vh|em|ex|px|in|cm|mm|pt|pc)){code} | Matches a positive length value, similar to {{length}} but without negative values. |
+| percentage | {code}(-|\+)?([0-9]+(\.[0-9]+)?)%{code} | Matches a percentage value, optionally signed (e.g., {{50%}}, {{-10%}}). |
+| positivePercentage | {code}(\+)?([0-9]+(\.[0-9]+)?)%{code} | Matches a positive percentage value (e.g., {{50%}}, {{+10%}}). |
+| absolute-size | {code}(xx-small|x-small|small|medium|large|x-large|xx-large){code} | Matches CSS absolute font size keywords. |
+| relative-size | {code}(larger|smaller){code} | Matches CSS relative font size keywords. |
+| rgbCode | {code}rgb\(([1]?[0-9]{1,2}|2[0-4][0-9]|25[0-5]),([1]?[0-9]{1,2}|2[0-4][0-9]|25[0-5]),([1]?[0-9]{1,2}|2[0-4][0-9]|25[0-5])\){code} | Matches CSS {{rgb()}} color values, ensuring each component is between 0 and 255 (e.g., {{rgb(255,0,128)}}). |
+| systemColor | {code}(activeborder|activecaption|...|windowtext){code} | Matches CSS2 system color keywords (e.g., {{buttonface}}, {{windowtext}}). (List truncated for brevity). |
+
+h2. Common Attributes ({{<common-attributes>}})
+
+This section defines attributes that are common to many HTML tags. Defining them here allows them to be referenced by specific tag rules without re-specifying their validation logic.
+
+|| Attribute Name || Description (from XML) || Validation Rules ||
+| id | The 'id' of any HTML attribute should not contain anything besides letters and numbers (Note: policy allows more via htmlId) | Regex: {{htmlId}} |
+| class | The 'class' of any HTML attribute is usually a single word, but it can also be a list of class names separated by spaces | Regex: {{htmlClass}} |
+| lang | The 'lang' attribute tells the browser what language the element's attribute values and content are written in | Regex: {{[a-zA-Z0-9-]{2,20}}} (e.g., {{en}}, {{en-US}}) |
+| title | The 'title' attribute provides text that shows up in a 'tooltip' when a user hovers their mouse over the element | Regex: {{htmlTitle}} |
+| alt | The 'alt' attribute provides alternative text to users when its visual representation is not available | Regex: {{paragraph}} |
+| style | The 'style' attribute provides the ability for users to change many attributes of the tag's contents using a strict syntax | {info} This attribute is special. Its content is validated by the inline CSS scanner defined in {{<css-rules>}}, not by a simple regex here. |
+| media | (No description provided) | Regex: {{[a-zA-Z0-9,\-\s]+}} AND Literals: {{screen, tty, tv, projection, handheld, print, braille, aural, all}} |
+| href | (No description provided) | Regexes: {{onsiteURL}}, {{offsiteURL}}. {warning} The comment "onInvalid="filterTag" has been removed..." indicates a past security consideration. Ensuring {{href}} attributes point to safe locations is critical. |
+| name | (No description provided) | Regex: {{[a-zA-Z0-9\-_\$]+}}. The {{<code>$</code>}} is noted as being for .NET controls. |
+| shape | The 'shape' attribute defines the shape of the selectable area | Literals: {{default, rect, circle, poly}} |
+| border | (No description provided) | Regex: {{number}} (for table borders, etc.) |
+| cellpadding | (No description provided) | Regex: {{number}} |
+| cellspacing | (No description provided) | Regex: {{number}} |
+| colspan | (No description provided) | Regex: {{number}} |
+| rowspan | (No description provided) | Regex: {{number}} |
+| background | (No description provided) | Regex: {{onsiteURL}} (e.g., for table background images) |
+| bgcolor | (No description provided) | Regexes: {{colorName}}, {{colorCode}} |
+| abbr | (No description provided) | Regex: {{paragraph}} |
+| headers | The 'headers' attribute is a space-separated list of cell IDs | Regex: {{[a-zA-Z0-9\s*]*}} |
+| charoff | (No description provided) | Regex: {{numberOrPercent}} |
+| char | (No description provided) | Regex: {{.{0,1}}} (zero or one character) |
+| axis | The 'axis' attribute is a comma-separated list of related header cells | Regex: {{[a-zA-Z0-9\s*,]*}} |
+| nowrap | The 'nowrap' attribute tells the browser not to wrap text that goes over one line | Regex: {{anything}} (effectively allows any value, or often just the presence of the attribute implies true). |
+| width | (No description provided) | Regex: {{numberOrPercent}} |
+| height | (No description provided) | Regex: {{numberOrPercent}} |
+| align | The 'align' attribute of an HTML element is a direction word, like 'left', 'right' or 'center' | Literals: {{center, middle, left, right, justify, char}} |
+| valign | The 'valign' attribute of an HTML attribute is a direction word, like 'baseline','bottom','middle' or 'top' | Literals: {{baseline, bottom, middle, top}} |
+| onFocus | The 'onFocus' event is executed when the control associated with the tag gains focus | {warning} Literals: {{javascript:void(0)}}, {{javascript:history.go(-1)}}. Allowing JavaScript event handlers is generally risky. These specific values are often used as benign placeholders, but strict scrutiny is required. |
+| onBlur | The 'onBlur' event is executed when the control associated with the tag loses focus | {warning} Literals: {{javascript:void(0)}}, {{javascript:history.go(-1)}}. (Same warning as onFocus) |
+| onClick | The 'onClick' event is executed when the control associated with the tag is clicked | {warning} Literals: {{javascript:void(0)}}, {{javascript:history.go(-1)}}. (Same warning as onFocus) |
+| onDblClick | The 'onDblClick' event is executed when the control associated with the tag is clicked twice immediately | {warning} Literals: {{javascript:void(0)}}, {{javascript:history.go(-1)}}. (Same warning as onFocus) |
+| onMouseDown | The 'onMouseDown' event is executed when the control associated with the tag is clicked but not yet released | {warning} Literals: {{javascript:void(0)}}, {{javascript:history.go(-1)}}. (Same warning as onFocus) |
+| onMouseUp | The 'onMouseUp' event is executed when the control associated with the tag is clicked after the button is released | {warning} Literals: {{javascript:void(0)}}, {{javascript:history.go(-1)}}. (Same warning as onFocus) |
+| onMouseOver | The 'onMouseOver' event is executed when the user's mouse hovers over the control associated with the tag | {warning} Literals: {{javascript:void(0)}}, {{javascript:history.go(-1)}}. (Same warning as onFocus) |
+| scope | The 'scope' attribute defines what's covered by the header cells | Literals: {{row, col, rowgroup, colgroup}} |
+| tabindex | (Commented out) | If uncommented, would allow {{tabindex}} with a {{number}} value. |
+| disabled | (No description provided) | Regex: {{anything}} (presence of attribute often implies true) |
+| readonly | (No description provided) | Regex: {{anything}} (presence of attribute often implies true) |
+| accesskey | (No description provided) | Regex: {{anything}} |
+| size | (No description provided) | Regex: {{number}} (e.g., for input fields) |
+| autocomplete | (No description provided) | Literals: {{on, off}} |
+| rows | (No description provided) | Regex: {{number}} (e.g., for textarea) |
+| cols | (No description provided) | Regex: {{number}} (e.g., for textarea) |
+| frameborder | (Custom Added) | Regex: {{number}} (typically {{0}} or {{1}} for iframes) |
+| allow | (Custom Added) | Regex: {{anything}} (for iframe permissions policy, e.g., {{geolocation; microphone; camera}}) |
+| allowfullscreen | (Custom Added) | Regex: {{boolean}} ({{true}} or {{false}} for iframes) |
+
+h2. Global Tag Attributes ({{<global-tag-attributes>}})
+
+These are attributes from {{<common-attributes>}} that are allowed on *most* HTML tags by default, unless a specific tag rule overrides this.
+*   {{id}} (Not valid in base, head, html, meta, param, script, style, and title elements)
+*   {{style}}
+*   {{title}}
+*   {{class}}
+*   {{lang}} (Not valid in base, br, frame, frameset, hr, iframe, param, and script elements)
+
+h2. Tags to Encode ({{<tags-to-encode>}})
+
+These tags, if encountered in the input, will be HTML entity encoded rather than removed or processed. This is useful for custom pseudo-tags that you want to display as text rather than interpret as HTML.
+*   {{<g>}}
+*   {{<grin>}}
+
+h2. Tag Rules ({{<tag-rules>}})
+
+This is the core section defining how individual HTML tags and their attributes are handled.
+*Tag Actions:*
+*   {{validate}}: The tag is allowed if its attributes conform to the defined rules.
+*   {{remove}}: The tag and its content are completely removed.
+*   {{filter}}: The tag is removed, but its content is preserved (not used in this specific config, but a common AntiSamy action).
+*   {{truncate}}: The tag's attributes are removed, but the tag itself and its content are preserved.
+
+*Attribute {{onInvalid}} Actions:*
+*   {{removeTag}}: If the attribute is invalid, the entire tag is removed.
+*   {{removeAttribute}}: If the attribute is invalid, only the attribute is removed (default behavior if not specified).
+*   {{filterTag}}: If the attribute is invalid, the tag is removed, but its content is preserved.
+
+h3. JavaScript Related Tags
+|| Tag || Action || Allowed Attributes & Rules || Notes ||
+| script | remove | (N/A) | All {{<script>}} tags and their content are removed to prevent XSS. |
+| noscript | validate | (Uses global attributes) | {{<noscript>}} content is validated. The comment notes that CSS within {{<noscript>}} could still be an attack vector if {{<style>}} tags are allowed. |
+
+h3. Frame & Related Tags
+|| Tag || Action || Allowed Attributes & Rules || Notes ||
+| iframe | validate | {{src}} (onInvalid: removeTag, Regex: {{https://trusted-domain1.com/.*}}, {{https://trusted-domain2.com/.*}}), {{width}}, {{height}}, {{frameborder}}, {{allow}}, {{allowfullscreen}}, {{name}} | {{<iframe>}} tags are allowed but heavily restricted. The {{src}} attribute *must* point to one of the two trusted domains. This is a critical security measure. Other attributes for sizing and features are allowed. |
+| frameset | remove | (N/A) | Removed due to security risks and obsolescence. |
+| frame | remove | (N/A) | Removed due to security risks and obsolescence. |
+
+h3. Form Related Tags
+|| Tag || Action || Allowed Attributes & Rules || Notes ||
+| label | validate | {{for}} (Regex: {{htmlId}}), (global attributes) | Allows {{<label>}} tags, with the {{for}} attribute validated to match an {{htmlId}}. |
+
+h3. Formatting Tags
+(Most of these use {{action="validate"}} and rely on {{<global-tag-attributes>}} for allowed attributes like {{id}}, {{class}}, {{style}}, {{title}} unless specified otherwise)
+
+*   {{<h1>}} to {{<h6>}}: {{validate}}
+*   {{<p>}}: {{validate}}, Allowed attributes: {{align}} (from common-attributes)
+*   {{<i>}}, {{<b>}}, {{<u>}}, {{<strong>}}, {{<em>}}, {{<small>}}, {{<big>}}, {{<pre>}}, {{<code>}}, {{<cite>}}, {{<samp>}}, {{<sub>}}, {{<sup>}}, {{<strike>}}, {{<center>}}, {{<blockquote>}}: {{validate}}
+*   {{<hr>}}, {{<br>}}: {{validate}}
+*   {{<font>}}: {{validate}}
+    *   Allowed attributes:
+        *   {{color}}: Regex {{colorName}}, {{colorCode}}
+        *   {{face}}: Regex {{[\w;, \-]+}} (font family names)
+        *   {{size}}: Regex {{(\+|-){0,1}(\d)+}} (relative sizes like {{+1}}, {{-2}})
+
+h3. Anchor and Anchor Related Tags
+|| Tag || Action || Allowed Attributes & Rules || Notes ||
+| a | validate | {{href}} (from common), {{onFocus}} (from common), {{onBlur}} (from common), {{nohref}} (Regex: {{anything}}), {{rel}} (Literal: {{nofollow}}), {{name}} (from common) | Anchor tags are allowed. {{href}} is validated by {{onsiteURL}} / {{offsiteURL}}. The {{rel="nofollow"}} is important for SEO and mitigating some link-based spam/risks. JavaScript event handlers are restricted. |
+| map | validate | (Uses global attributes) | Allows client-side image maps. |
+| base | (Commented out) | The comment "base tag removed per demo - this could be enabled with literal-list values you allow" indicates it's removed for security. The {{<base>}} tag can redirect all relative URLs on a page, posing a significant risk. |
+
+h3. Stylesheet Tags
+|| Tag || Action || Allowed Attributes & Rules || Notes ||
+| style | validate | {{type}} (Literal: {{text/css}}), {{media}} (from common) | Allows inline {{<style>}} tags. The content of these tags is parsed and validated against the rules in {{<css-rules>}}. |
+| span | validate | (Uses global attributes) | Generic inline container. |
+| div | validate | {{align}} (from common), (global attributes) | Generic block container. The comments "what could an attacker do if they could overwrite an existing div definition? prolly something bad" for id/class highlight the importance of carefully considering attribute permissions. |
+
+h3. Image & Image Related Tags
+|| Tag || Action || Allowed Attributes & Rules || Notes ||
+| img | validate | {{src}} (onInvalid: removeTag, Regexes: {{onsiteURL}}, {{offsiteURL}}), {{name}}, {{alt}}, {{height}}, {{width}}, {{border}}, {{align}}, {{hspace}} (Regex: {{number}}), {{vspace}} (Regex: {{number}}) | Image tags are allowed. {{src}} must be a valid on-site or off-site URL. Invalid {{src}} removes the tag. |
+| link | validate | {{media}} (from common), {{type}} (onInvalid: removeTag, Literals: {{text/css, application/rss+xml, image/x-icon}}), {{rel}} (Literals: {{stylesheet, shortcut icon, search, copyright, top, alternate}}) | {{<link>}} tags are allowed for specific {{type}} and {{rel}} values. Critically, {{href}} is commented out with a note about the difficulty of safely handling remote stylesheets that might change after validation. If {{embedStyleSheets}} directive was true, this might behave differently. |
+
+h3. List Tags
+*   {{<ul>}}, {{<ol>}}, {{<li>}}: {{validate}} (Uses global attributes)
+
+h3. Dictionary Tags
+*   {{<dd>}}, {{<dl>}}, {{<dt>}}: {{action="truncate"}} (Attributes removed, tag and content preserved)
+
+h3. Table Tags
+(Most use {{action="validate"}} and rely on global attributes plus specific table-related attributes from {{<common-attributes>}})
+*   {{<thead>}}, {{<tbody>}}, {{<tfoot>}}: {{validate}}, Allowed attributes: {{align}}, {{char}}, {{charoff}}, {{valign}}
+*   {{<table>}}: {{validate}}, Allowed attributes: {{height}}, {{width}}, {{border}}, {{bgcolor}}, {{cellpadding}}, {{cellspacing}}, {{background}}, {{align}}, {{noresize}} (Literals: {{noresize}}, {{""}})
+*   {{<td>}}, {{<th>}}: {{validate}}, Allowed attributes: {{background}}, {{bgcolor}}, {{abbr}}, {{axis}}, {{headers}}, {{scope}}, {{nowrap}}, {{height}}, {{width}}, {{align}}, {{char}}, {{charoff}}, {{valign}}, {{colspan}}, {{rowspan}}
+*   {{<tr>}}: {{validate}}, Allowed attributes: {{height}}, {{width}}, {{align}}, {{valign}}, {{char}}, {{charoff}}, {{background}}
+*   {{<colgroup>}}: {{validate}}, Allowed attributes: {{span}} (Regex: {{number}}), {{width}}, {{align}}, {{char}}, {{charoff}}, {{valign}}
+*   {{<col>}}: {{validate}}, Allowed attributes: {{align}}, {{char}}, {{charoff}}, {{valign}}, {{span}} (Regex: {{number}}), {{width}}
+*   {{<fieldset>}}, {{<legend>}}: {{validate}}
+
+h2. CSS Rules ({{<css-rules>}})
+
+This section defines allowed CSS properties and their valid values for inline styles ({{style="..."}}) and {{<style>}} blocks.
+
+Each {{<property>}} can have:
+*   {{name}}: The CSS property name.
+*   {{description}}: Explanation of the property.
+*   {{literal-list}}: A list of allowed keyword values.
+*   {{regexp-list}}: A list of regular expressions (referenced by name from {{<common-regexps>}}) to validate values.
+*   {{shorthand-list}}: If this property is a shorthand, lists the individual properties it expands to (in terms of validation logic).
+*   {{category-list}}: Groups properties (e.g., {{visual}}, {{aural}}).
+*   {{default}}: A default value (informational).
+
+{info} Due to the extensive list of CSS properties, only a few key examples or particularly noteworthy configurations will be highlighted here. The general structure is consistent. Refer to the XML for the full list.
+
+*Key Property Examples:*
+*   *{{background-image}}*: Allows {{none}}, {{inherit}}, or URIs validated by {{cssOffsiteUri}} and {{cssOnsiteUri}}.
+*   *{{color}}*, *{{background-color}}*, *{{border-color}}*: Allow {{inherit}}, color names ({{colorName}}), hex codes ({{colorCode}}), RGB codes ({{rgbCode}}), and system colors ({{systemColor}}).
+*   *{{font-family}}*: Allows specific generic families ({{serif}}, {{arial}}, etc.) and a general regex {{[\w,\-&apos;&quot; ]+}} for other font names. This is a balance between flexibility and preventing abuse with overly complex font names.
+*   *{{position}}*:
+    {warning} The values {{relative}}, {{absolute}}, and {{fixed}} are commented out with the note "possible to perform phishing attacks with the following". This is a critical security decision to prevent UI redressing or content overlay attacks. Only {{static}} and {{inherit}} are allowed.
+*   *{{width}}, {{height}}, {{margin}}, {{padding}}*: Allow standard length/percentage values, often restricted to positive values or {{auto}}.
+*   *Shorthand properties* like {{font}}, {{background}}, {{border}}, {{margin}}, {{padding}} typically reference their constituent longhand properties for validation.
+*   Many properties allow {{inherit}} as a value.
+*   Aural CSS properties ({{azimuth}}, {{cue-after}}, {{pitch}}, etc.) are included, primarily for accessibility tools.
+*   The {{url()}} values in CSS are validated against {{cssOnsiteUri}} or {{cssOffsiteUri}}.
+
+h2. Allowed Empty Tags ({{<allowed-empty-tags>}})
+
+This section lists tags that are permitted to be empty (e.g., {{<br />}}, {{<hr />}}, {{<img ... />}}). AntiSamy might otherwise try to "fix" or remove tags it deems improperly empty.
+
+The list includes:
+{{br, hr, a, img, link, iframe, script, object, applet, frame, base, param, meta, input, textarea, embed, basefont, col, div}}
+
+{info} Note that some tags listed here like {{script}}, {{frame}}, {{applet}} are set to be removed entirely by {{<tag-rules>}}. Their presence in {{<allowed-empty-tags>}} might be a remnant or for a policy that allows them under different conditions. For this specific configuration, the {{<tag-rules>}} take precedence. {{<div>}} being here means an empty {{<div />}} is acceptable. {{<a>}} means {{<a name="foo"></a>}} (an anchor without content) is acceptable.
+
+h2. General Security Considerations from the Configuration
+
+*   *Principle of Least Privilege*: The policy aims to allow only known-safe HTML/CSS constructs.
+*   *XSS Prevention*: Removal of {{<script>}}, strict control over {{<iframe>}} sources, and sanitization of JavaScript event handlers (though allowing {{javascript:void(0)}} still requires trust in how these are used contextually) are key.
+*   *Phishing/UI Redressing*: Disallowing CSS {{position: absolute/relative/fixed}} helps prevent these.
+*   *URL Validation*: Differentiating between on-site and off-site URLs for {{href}}, {{src}}, and CSS {{url()}} functions is important.
+*   *Input Limits*: {{maxInputSize}} prevents DoS.
+*   *CSS Complexity*: The detailed CSS rules prevent many CSS-based attacks, though CSS remains a complex sanitization target.
+*   *Trusted Domains*: The {{<iframe>}} {{src}} whitelist is a good practice.
+
+This configuration provides a strong baseline for sanitizing HTML input. Regular review and updates are recommended as web standards and attack vectors evolve.

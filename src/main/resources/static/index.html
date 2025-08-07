@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SSE Client Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .response-container {
+            height: 500px;
+            overflow-y: auto;
+            border: 1px solid #dee2e6;
+            border-radius: 0.375rem;
+            padding: 15px;
+            background-color: #f8f9fa;
+        }
+
+        .event-item {
+            margin-bottom: 10px;
+            padding: 8px 12px;
+            border-left: 4px solid #0d6efd;
+            background-color: white;
+            border-radius: 4px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .event-timestamp {
+            font-size: 0.8em;
+            color: #6c757d;
+            float: right;
+        }
+
+        .event-data {
+            margin-top: 5px;
+            font-family: 'Courier New', monospace;
+            background-color: #f1f3f4;
+            padding: 5px;
+            border-radius: 3px;
+        }
+
+        .connection-status {
+            padding: 5px 10px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            font-weight: bold;
+        }
+
+        .status-connected {
+            background-color: #d1e7dd;
+            color: #0f5132;
+        }
+
+        .status-disconnected {
+            background-color: #f8d7da;
+            color: #842029;
+        }
+
+        .status-connecting {
+            background-color: #fff3cd;
+            color: #664d03;
+        }
+
+        .preset-urls {
+            margin-bottom: 20px;
+        }
+
+        .url-preset {
+            margin: 5px;
+        }
+
+        .stats-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid py-4">
+        <div class="row">
+            <div class="col-12">
+                <h1 class="text-center mb-4">
+                    <i class="fas fa-stream"></i> Server-Sent Events Client Dashboard
+                </h1>
+            </div>
+        </div>
+
+        <!-- Connection Controls -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fas fa-cog"></i> Connection Settings</h5>
+                    </div>
+                    <div class="card-body">
+                        <!-- Preset URLs -->
+                        <div class="preset-urls">
+                            <label class="form-label fw-bold">Quick Select URLs:</label>
+                            <div class="d-flex flex-wrap">
+                                <button class="btn btn-outline-primary btn-sm url-preset"
+                                        onclick="setUrl('http://localhost:8080/sse/1')">
+                                    SSE/1 - Interval Events
+                                </button>
+                                <button class="btn btn-outline-primary btn-sm url-preset"
+                                        onclick="setUrl('http://localhost:8080/sse/2?page=1')">
+                                    SSE/2 - File Content (Page 1)
+                                </button>
+                                <button class="btn btn-outline-primary btn-sm url-preset"
+                                        onclick="setUrl('http://localhost:8080/sse/2?page=2')">
+                                    SSE/2 - File Content (Page 2)
+                                </button>
+                                <button class="btn btn-outline-primary btn-sm url-preset"
+                                        onclick="setUrl('http://localhost:8080/sse/stream-sse-mvc')">
+                                    SSE MVC - Time Events
+                                </button>
+                                <button class="btn btn-outline-primary btn-sm url-preset"
+                                        onclick="setUrl('http://localhost:8080/sse/sse-1')">
+                                    SSE-1 - WebClient Stream
+                                </button>
+                                <button class="btn btn-outline-warning btn-sm url-preset"
+                                        onclick="setUrl('http://localhost:8080/sse/connect/john')">
+                                    Connect as John
+                                </button>
+                                <button class="btn btn-outline-info btn-sm url-preset"
+                                        onclick="setUrl('http://localhost:8080/sse/connect/kamruddin')">
+                                    Connect as Kamruddin
+                                </button>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-8">
+                                <label for="sseUrl" class="form-label fw-bold">SSE Endpoint URL:</label>
+                                <input type="text" class="form-control" id="sseUrl"
+                                       placeholder="Enter SSE endpoint URL (e.g., http://localhost:8080/sse/1)"
+                                       value="http://localhost:8080/sse/1">
+                            </div>
+                            <div class="col-md-4 d-flex align-items-end">
+                                <button class="btn btn-success me-2" id="connectBtn" onclick="connect()">
+                                    <i class="fas fa-play"></i> Connect
+                                </button>
+                                <button class="btn btn-danger me-2" id="disconnectBtn" onclick="disconnect()" disabled>
+                                    <i class="fas fa-stop"></i> Disconnect
+                                </button>
+                                <button class="btn btn-warning" onclick="clearResponses()">
+                                    <i class="fas fa-trash"></i> Clear
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Status and Stats -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card stats-card">
+                    <div class="card-body text-center">
+                        <h6>Connection Status</h6>
+                        <span id="connectionStatus" class="connection-status status-disconnected">
+                            <i class="fas fa-circle"></i> Disconnected
+                        </span>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stats-card">
+                    <div class="card-body text-center">
+                        <h6>Events Received</h6>
+                        <h4 id="eventCount">0</h4>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stats-card">
+                    <div class="card-body text-center">
+                        <h6>Connection Time</h6>
+                        <h4 id="connectionTime">00:00</h4>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stats-card">
+                    <div class="card-body text-center">
+                        <h6>Last Event</h6>
+                        <small id="lastEventTime">Never</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Response Display -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0"><i class="fas fa-list"></i> SSE Responses</h5>
+                        <div>
+                            <div class="form-check form-switch d-inline-block me-3">
+                                <input class="form-check-input" type="checkbox" id="autoScroll" checked>
+                                <label class="form-check-label" for="autoScroll">Auto Scroll</label>
+                            </div>
+                            <button class="btn btn-sm btn-outline-secondary" onclick="exportResponses()">
+                                <i class="fas fa-download"></i> Export
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body p-0">
+                        <div id="responseContainer" class="response-container">
+                            <div class="text-muted text-center mt-5">
+                                <i class="fas fa-info-circle"></i> No events received yet. Connect to an SSE endpoint to start receiving events.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let eventSource = null;
+        let eventCount = 0;
+        let connectionStartTime = null;
+        let connectionTimer = null;
+        let responses = [];
+        let isIntentionalDisconnect = false; // Track intentional disconnections
+
+        function setUrl(url) {
+            document.getElementById('sseUrl').value = url;
+        }
+
+        function connect() {
+            const url = document.getElementById('sseUrl').value.trim();
+
+            if (!url) {
+                alert('Please enter a valid URL');
+                return;
+            }
+
+            if (eventSource) {
+                disconnect();
+            }
+
+            isIntentionalDisconnect = false; // Reset flag when connecting
+            updateConnectionStatus('connecting', 'Connecting...');
+
+            try {
+                eventSource = new EventSource(url);
+                connectionStartTime = new Date();
+                startConnectionTimer();
+
+                eventSource.onopen = function(event) {
+                    updateConnectionStatus('connected', 'Connected');
+                    addResponse('CONNECTION', 'Connected to: ' + url, 'success');
+                };
+
+                eventSource.onmessage = function(event) {
+                    eventCount++;
+                    updateEventCount();
+                    updateLastEventTime();
+                    addResponse('MESSAGE', event.data);
+
+                    // Store response for export
+                    responses.push({
+                        timestamp: new Date(),
+                        type: 'MESSAGE',
+                        data: event.data,
+                        id: event.lastEventId || null
+                    });
+                };
+
+                eventSource.addEventListener('lineEvent', function(event) {
+                    eventCount++;
+                    updateEventCount();
+                    updateLastEventTime();
+                    addResponse('LINE_EVENT', event.data, 'info');
+
+                    responses.push({
+                        timestamp: new Date(),
+                        type: 'LINE_EVENT',
+                        data: event.data,
+                        id: event.lastEventId || null
+                    });
+                });
+
+                eventSource.addEventListener('sse event - mvc', function(event) {
+                    eventCount++;
+                    updateEventCount();
+                    updateLastEventTime();
+                    addResponse('MVC_EVENT', event.data, 'warning');
+
+                    responses.push({
+                        timestamp: new Date(),
+                        type: 'MVC_EVENT',
+                        data: event.data,
+                        id: event.lastEventId || null
+                    });
+                });
+
+                eventSource.addEventListener('sse-event', function(event) {
+                    eventCount++;
+                    updateEventCount();
+                    updateLastEventTime();
+                    addResponse('SSE_EVENT', event.data, 'primary');
+
+                    responses.push({
+                        timestamp: new Date(),
+                        type: 'SSE_EVENT',
+                        data: event.data,
+                        id: event.lastEventId || null
+                    });
+                });
+
+                eventSource.addEventListener('custom-message', function(event) {
+                    eventCount++;
+                    updateEventCount();
+                    updateLastEventTime();
+                    addResponse('CUSTOM_MESSAGE', event.data, 'primary');
+
+                    responses.push({
+                        timestamp: new Date(),
+                        type: 'CUSTOM_MESSAGE',
+                        data: event.data,
+                        id: event.lastEventId || null
+                    });
+                });
+
+                eventSource.addEventListener('redis-message', function(event) {
+                    eventCount++;
+                    updateEventCount();
+                    updateLastEventTime();
+                    addResponse('REDIS_MESSAGE', event.data, 'warning');
+
+                    responses.push({
+                        timestamp: new Date(),
+                        type: 'REDIS_MESSAGE',
+                        data: event.data,
+                        id: event.lastEventId || null
+                    });
+                });
+
+                // Handle stream completion event
+                eventSource.addEventListener('stream-complete', function(event) {
+                    eventCount++;
+                    updateEventCount();
+                    updateLastEventTime();
+                    addResponse('STREAM_COMPLETE', event.data, 'success');
+
+                    responses.push({
+                        timestamp: new Date(),
+                        type: 'STREAM_COMPLETE',
+                        data: event.data,
+                        id: event.lastEventId || null
+                    });
+
+                    // Mark as intentional disconnect to prevent reconnection
+                    isIntentionalDisconnect = true;
+
+                    // Close the connection gracefully
+                    setTimeout(() => {
+                        if (eventSource) {
+                            eventSource.close();
+                            eventSource = null;
+                            updateConnectionStatus('disconnected', 'Stream Completed');
+                            stopConnectionTimer();
+                            document.getElementById('connectBtn').disabled = false;
+                            document.getElementById('disconnectBtn').disabled = true;
+                        }
+                    }, 200); // Small delay to ensure event is processed
+                });
+
+                eventSource.onerror = function(event) {
+                    console.log('SSE Error event:', event);
+                    console.log('EventSource readyState:', eventSource.readyState);
+                    console.log('Is intentional disconnect:', isIntentionalDisconnect);
+
+                    if (eventSource.readyState === EventSource.CLOSED) {
+                        if (isIntentionalDisconnect) {
+                            // User clicked disconnect - don't show error message
+                            updateConnectionStatus('disconnected', 'Disconnected');
+                            addResponse('CONNECTION', 'Manually disconnected', 'secondary');
+                        } else {
+                            // Stream completed naturally - don't reconnect
+                            updateConnectionStatus('disconnected', 'Stream Completed');
+                            addResponse('CONNECTION', 'Stream completed by server', 'info');
+                        }
+
+                        // Clean up and reset UI regardless of reason
+                        stopConnectionTimer();
+                        document.getElementById('connectBtn').disabled = false;
+                        document.getElementById('disconnectBtn').disabled = true;
+                        eventSource = null;
+
+                    } else if (eventSource.readyState === EventSource.CONNECTING) {
+                        // Only show reconnecting message if it's not an intentional disconnect
+                        if (!isIntentionalDisconnect) {
+                            addResponse('WARNING', 'Connection lost, attempting to reconnect...', 'warning');
+                        }
+                    } else {
+                        // Unexpected error state
+                        updateConnectionStatus('disconnected', 'Connection Error');
+                        addResponse('ERROR', 'Unexpected connection error occurred', 'danger');
+
+                        // Clean up on error
+                        stopConnectionTimer();
+                        document.getElementById('connectBtn').disabled = false;
+                        document.getElementById('disconnectBtn').disabled = true;
+                        eventSource = null;
+                    }
+                };
+
+                document.getElementById('connectBtn').disabled = true;
+                document.getElementById('disconnectBtn').disabled = false;
+
+            } catch (error) {
+                updateConnectionStatus('disconnected', 'Error');
+                addResponse('ERROR', 'Failed to connect: ' + error.message, 'danger');
+            }
+        }
+
+        function disconnect() {
+            isIntentionalDisconnect = true; // Mark as intentional disconnect
+
+            if (eventSource) {
+                eventSource.close();
+                eventSource = null;
+            }
+
+            updateConnectionStatus('disconnected', 'Disconnected');
+            stopConnectionTimer();
+            addResponse('CONNECTION', 'Disconnected', 'secondary');
+
+            document.getElementById('connectBtn').disabled = false;
+            document.getElementById('disconnectBtn').disabled = true;
+        }
+
+        function updateConnectionStatus(status, text) {
+            const statusElement = document.getElementById('connectionStatus');
+            statusElement.className = `connection-status status-${status}`;
+            statusElement.innerHTML = `<i class="fas fa-circle"></i> ${text}`;
+        }
+
+        function updateEventCount() {
+            document.getElementById('eventCount').textContent = eventCount;
+        }
+
+        function updateLastEventTime() {
+            const now = new Date();
+            document.getElementById('lastEventTime').textContent = now.toLocaleTimeString();
+        }
+
+        function startConnectionTimer() {
+            connectionTimer = setInterval(() => {
+                if (connectionStartTime) {
+                    const now = new Date();
+                    const diff = Math.floor((now - connectionStartTime) / 1000);
+                    const minutes = Math.floor(diff / 60);
+                    const seconds = diff % 60;
+                    document.getElementById('connectionTime').textContent =
+                        `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                }
+            }, 1000);
+        }
+
+        function stopConnectionTimer() {
+            if (connectionTimer) {
+                clearInterval(connectionTimer);
+                connectionTimer = null;
+            }
+            document.getElementById('connectionTime').textContent = '00:00';
+        }
+
+        function addResponse(type, data, variant = 'primary') {
+            const container = document.getElementById('responseContainer');
+
+            // Remove the "no events" message if it exists
+            if (container.children.length === 1 && container.children[0].classList.contains('text-muted')) {
+                container.innerHTML = '';
+            }
+
+            const eventItem = document.createElement('div');
+            eventItem.className = 'event-item';
+
+            const timestamp = new Date().toLocaleTimeString();
+
+            eventItem.innerHTML = `
+                <div>
+                    <span class="badge bg-${variant} me-2">${type}</span>
+                    <span class="event-timestamp">${timestamp}</span>
+                </div>
+                <div class="event-data">${escapeHtml(data)}</div>
+            `;
+
+            container.appendChild(eventItem);
+
+            // Auto-scroll if enabled
+            if (document.getElementById('autoScroll').checked) {
+                container.scrollTop = container.scrollHeight;
+            }
+        }
+
+        function clearResponses() {
+            const container = document.getElementById('responseContainer');
+            container.innerHTML = `
+                <div class="text-muted text-center mt-5">
+                    <i class="fas fa-info-circle"></i> No events received yet. Connect to an SSE endpoint to start receiving events.
+                </div>
+            `;
+            eventCount = 0;
+            updateEventCount();
+            responses = [];
+        }
+
+        function exportResponses() {
+            if (responses.length === 0) {
+                alert('No responses to export');
+                return;
+            }
+
+            const dataStr = JSON.stringify(responses, null, 2);
+            const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+
+            const exportFileDefaultName = `sse-responses-${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.json`;
+
+            const linkElement = document.createElement('a');
+            linkElement.setAttribute('href', dataUri);
+            linkElement.setAttribute('download', exportFileDefaultName);
+            linkElement.click();
+        }
+
+        function escapeHtml(text) {
+            const map = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            };
+            return text.replace(/[&<>"']/g, function(m) { return map[m]; });
+        }
+
+        // Allow Enter key to connect
+        document.getElementById('sseUrl').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                connect();
+            }
+        });
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', function() {
+            if (eventSource) {
+                eventSource.close();
+            }
+        });
+    </script>
+</body>
+</html>

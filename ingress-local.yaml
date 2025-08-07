@@ -1,0 +1,49 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: reactive-sse-local-ingress
+  labels:
+    app: reactive-sse-local
+    environment: local
+  annotations:
+    # NGINX Ingress Controller annotations for local development
+#    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+
+    # For SSE connections, we need to handle long-lived connections
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-cache: "off"
+    nginx.ingress.kubernetes.io/proxy-set-headers: "ingress-nginx/custom-headers"
+
+    # CORS headers for local development
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "*"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET,POST,OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Authorization"
+
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: reactive-sse.local  # Add this to your hosts file: 127.0.0.1 reactive-sse.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: reactive-sse-local-service
+            port:
+              number: 8080
+  # Alternative: Use without custom hostname (access via localhost or minikube ip)
+  - http:
+      paths:
+      - path: /reactive-sse(/|$)(.*)
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: reactive-sse-local-service
+            port:
+              number: 8080

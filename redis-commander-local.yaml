@@ -1,0 +1,79 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-commander-local
+  labels:
+    app: redis-commander-local
+    environment: local
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis-commander-local
+  template:
+    metadata:
+      labels:
+        app: redis-commander-local
+        environment: local
+    spec:
+      containers:
+      - name: redis-commander
+        image: rediscommander/redis-commander:latest
+        ports:
+        - containerPort: 8081
+          name: web
+        env:
+        - name: REDIS_HOSTS
+          value: "local:redis-local-service:6379"
+        - name: HTTP_USER
+          value: "admin"
+        - name: HTTP_PASSWORD
+          value: "admin"
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "25m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-commander-service
+  labels:
+    app: redis-commander-local
+spec:
+  selector:
+    app: redis-commander-local
+  ports:
+  - name: web
+    protocol: TCP
+    port: 8081
+    targetPort: 8081
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: redis-commander-ingress
+  labels:
+    app: redis-commander-local
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: redis-dashboard.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: redis-commander-service
+            port:
+              number: 8081
+

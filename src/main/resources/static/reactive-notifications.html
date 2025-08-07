@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reactive User Notifications - SSE Demo</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .connection-panel {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        input {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        .connect-btn {
+            background-color: #28a745;
+            color: white;
+        }
+        .disconnect-btn {
+            background-color: #dc3545;
+            color: white;
+        }
+        .clear-btn {
+            background-color: #6c757d;
+            color: white;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+            font-weight: bold;
+        }
+        .status.connected {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.disconnected {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .status.connecting {
+            background-color: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        .notifications {
+            max-height: 500px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 10px;
+            background-color: #f8f9fa;
+        }
+        .notification {
+            background: white;
+            margin: 10px 0;
+            padding: 15px;
+            border-radius: 4px;
+            border-left: 4px solid #007bff;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .notification.new-message {
+            border-left-color: #28a745;
+        }
+        .notification.connection-established {
+            border-left-color: #007bff;
+        }
+        .notification.error {
+            border-left-color: #dc3545;
+            background-color: #fff5f5;
+        }
+        .notification-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .notification-type {
+            font-weight: bold;
+            text-transform: uppercase;
+            font-size: 0.8em;
+        }
+        .notification-time {
+            font-size: 0.8em;
+            color: #666;
+        }
+        .notification-content {
+            margin: 8px 0;
+            font-size: 1.1em;
+        }
+        .message-details {
+            font-size: 0.9em;
+            color: #555;
+            margin-top: 8px;
+            background-color: #f8f9fa;
+            padding: 8px;
+            border-radius: 4px;
+        }
+        .severity {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 0.8em;
+            font-weight: bold;
+            margin-right: 8px;
+        }
+        .severity.low { background-color: #d1ecf1; color: #0c5460; }
+        .severity.medium { background-color: #fff3cd; color: #856404; }
+        .severity.high { background-color: #f8d7da; color: #721c24; }
+        .severity.critical { background-color: #d4edda; color: #155724; }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .stat-card {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            border: 1px solid #dee2e6;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #007bff;
+        }
+        .stat-label {
+            font-size: 0.9em;
+            color: #666;
+            margin-top: 5px;
+        }
+        .reactive-badge {
+            background: linear-gradient(45deg, #007bff, #28a745);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>Reactive User Message Notifications
+        <span class="reactive-badge">⚡ Flux SSE</span>
+    </h1>
+
+    <div class="container">
+        <h2>Connection Control</h2>
+        <div class="connection-panel">
+            <label for="userId">User ID:</label>
+            <input type="number" id="userId" placeholder="Enter User ID" value="1561">
+            <button id="connectBtn" class="connect-btn">Connect</button>
+            <button id="disconnectBtn" class="disconnect-btn" disabled>Disconnect</button>
+            <button id="clearBtn" class="clear-btn">Clear Notifications</button>
+        </div>
+        <div id="status" class="status disconnected">Disconnected</div>
+        <div>
+            <small><strong>Reactive Features:</strong> Flux-based SSE, User-specific streams, Distributed MongoDB change streams</small>
+        </div>
+    </div>
+
+    <div class="container">
+        <h2>Real-time Notifications</h2>
+        <div id="notifications" class="notifications">
+            <p>Connect to a user ID to start receiving reactive notifications...</p>
+        </div>
+    </div>
+
+    <div class="container">
+        <h2>Statistics</h2>
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-value" id="totalNotifications">0</div>
+                <div class="stat-label">Total Notifications</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="messageCount">0</div>
+                <div class="stat-label">New Messages</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="connectionTime">--</div>
+                <div class="stat-label">Connected Since</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="lastNotification">--</div>
+                <div class="stat-label">Last Notification</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let eventSource = null;
+        let isConnected = false;
+        let totalNotifications = 0;
+        let messageCount = 0;
+        let connectionStartTime = null;
+
+        const connectBtn = document.getElementById('connectBtn');
+        const disconnectBtn = document.getElementById('disconnectBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const userIdInput = document.getElementById('userId');
+        const statusDiv = document.getElementById('status');
+        const notificationsDiv = document.getElementById('notifications');
+
+        // Statistics elements
+        const totalNotificationsEl = document.getElementById('totalNotifications');
+        const messageCountEl = document.getElementById('messageCount');
+        const connectionTimeEl = document.getElementById('connectionTime');
+        const lastNotificationEl = document.getElementById('lastNotification');
+
+        connectBtn.addEventListener('click', connect);
+        disconnectBtn.addEventListener('click', disconnect);
+        clearBtn.addEventListener('click', clearNotifications);
+
+        function connect() {
+            const userId = userIdInput.value.trim();
+            if (!userId) {
+                alert('Please enter a User ID');
+                return;
+            }
+
+            if (isConnected) {
+                disconnect();
+            }
+
+            updateStatus('connecting', 'Connecting to reactive stream...');
+
+            const url = `/api/notifications/user/${userId}/stream`;
+            eventSource = new EventSource(url);
+
+            eventSource.onopen = function(event) {
+                isConnected = true;
+                connectionStartTime = new Date();
+                updateStatus('connected', `Connected to Reactive Flux Stream - User ID: ${userId}`);
+                updateButtons();
+                updateConnectionTime();
+            };
+
+            eventSource.onmessage = function(event) {
+                console.log('Generic message received:', event);
+                handleNotification('message', event.data, event.lastEventId);
+            };
+
+            eventSource.addEventListener('connection-established', function(event) {
+                console.log('Connection established event:', event);
+                const data = JSON.parse(event.data);
+                handleConnectionEstablished(data, event.lastEventId);
+            });
+
+            eventSource.addEventListener('new-message', function(event) {
+                console.log('New message event:', event);
+                const messageData = JSON.parse(event.data);
+                handleNewMessage(messageData, event.lastEventId);
+            });
+
+            eventSource.onerror = function(event) {
+                console.error('SSE Error:', event);
+                if (isConnected) {
+                    handleNotification('error', 'Connection error occurred', new Date().getTime());
+                    updateStatus('disconnected', 'Connection lost');
+                    isConnected = false;
+                    updateButtons();
+                }
+            };
+
+            userIdInput.disabled = true;
+        }
+
+        function disconnect() {
+            if (eventSource) {
+                eventSource.close();
+                eventSource = null;
+            }
+            isConnected = false;
+            connectionStartTime = null;
+            updateStatus('disconnected', 'Disconnected');
+            updateButtons();
+            userIdInput.disabled = false;
+        }
+
+        function updateStatus(type, message) {
+            statusDiv.className = `status ${type}`;
+            statusDiv.textContent = message;
+        }
+
+        function updateButtons() {
+            connectBtn.disabled = isConnected;
+            disconnectBtn.disabled = !isConnected;
+        }
+
+        function clearNotifications() {
+            notificationsDiv.innerHTML = '<p>Notifications cleared...</p>';
+            totalNotifications = 0;
+            messageCount = 0;
+            updateStatistics();
+        }
+
+        function handleConnectionEstablished(data, eventId) {
+            totalNotifications++;
+            const notification = createConnectionNotificationElement(data, eventId);
+            addNotification(notification);
+            updateStatistics();
+        }
+
+        function handleNewMessage(messageData, eventId) {
+            totalNotifications++;
+            messageCount++;
+            const notification = createMessageNotificationElement(messageData, eventId);
+            addNotification(notification);
+            updateStatistics();
+        }
+
+        function handleNotification(type, data, eventId) {
+            totalNotifications++;
+            const notification = createNotificationElement(type, data, eventId);
+            addNotification(notification);
+            updateStatistics();
+        }
+
+        function createConnectionNotificationElement(data, eventId) {
+            const div = document.createElement('div');
+            div.className = 'notification connection-established';
+
+            const time = new Date().toLocaleTimeString();
+
+            div.innerHTML = `
+                <div class="notification-header">
+                    <span class="notification-type">⚡ Connection Established</span>
+                    <span class="notification-time">${time}</span>
+                </div>
+                <div class="notification-content">
+                    <strong>${data.message}</strong>
+                </div>
+                <div class="message-details">
+                    <strong>Reactive Stream:</strong> Active for User ${data.userId}<br>
+                    <strong>Type:</strong> ${data.type} |
+                    <strong>Timestamp:</strong> ${data.timestamp}
+                </div>
+                ${eventId ? `<div style="font-size: 0.8em; color: #888; margin-top: 8px;">Event ID: ${eventId}</div>` : ''}
+            `;
+
+            return div;
+        }
+
+        function createMessageNotificationElement(messageData, eventId) {
+            const div = document.createElement('div');
+            div.className = 'notification new-message';
+
+            const time = new Date().toLocaleTimeString();
+            const notificationTime = messageData.notificationTime ?
+                new Date(messageData.notificationTime).toLocaleTimeString() : time;
+
+            div.innerHTML = `
+                <div class="notification-header">
+                    <span class="notification-type">📧 New Message</span>
+                    <span class="notification-time">${notificationTime}</span>
+                </div>
+                <div class="notification-content">
+                    <strong>${messageData.message}</strong>
+                </div>
+                <div class="message-details">
+                    <span class="severity ${messageData.severity}">${messageData.severity?.toUpperCase() || 'UNKNOWN'}</span>
+                    <strong>ID:</strong> ${messageData.id || 'N/A'} |
+                    <strong>Type:</strong> ${messageData.type || 'N/A'} |
+                    <strong>Source:</strong> ${messageData.source || 'N/A'} |
+                    <strong>User:</strong> ${messageData.userId || 'N/A'}
+                    ${messageData.timestamp ? `<br><strong>Message Timestamp:</strong> ${messageData.timestamp}` : ''}
+                    ${messageData.notificationTime ? `<br><strong>Received:</strong> ${messageData.notificationTime}` : ''}
+                </div>
+                ${eventId ? `<div style="font-size: 0.8em; color: #888; margin-top: 8px;">Event ID: ${eventId}</div>` : ''}
+            `;
+
+            return div;
+        }
+
+        function createNotificationElement(type, data, eventId) {
+            const div = document.createElement('div');
+            div.className = `notification ${type}`;
+
+            const time = new Date().toLocaleTimeString();
+
+            div.innerHTML = `
+                <div class="notification-header">
+                    <span class="notification-type">${type}</span>
+                    <span class="notification-time">${time}</span>
+                </div>
+                <div class="notification-content">${data}</div>
+                ${eventId ? `<div style="font-size: 0.8em; color: #888;">Event ID: ${eventId}</div>` : ''}
+            `;
+
+            return div;
+        }
+
+        function addNotification(notification) {
+            if (notificationsDiv.children.length === 1 &&
+                notificationsDiv.children[0].tagName === 'P') {
+                notificationsDiv.innerHTML = '';
+            }
+
+            notificationsDiv.insertBefore(notification, notificationsDiv.firstChild);
+
+            // Limit to 50 notifications
+            while (notificationsDiv.children.length > 50) {
+                notificationsDiv.removeChild(notificationsDiv.lastChild);
+            }
+        }
+
+        function updateStatistics() {
+            totalNotificationsEl.textContent = totalNotifications;
+            messageCountEl.textContent = messageCount;
+            lastNotificationEl.textContent = new Date().toLocaleTimeString();
+        }
+
+        function updateConnectionTime() {
+            if (connectionStartTime) {
+                connectionTimeEl.textContent = connectionStartTime.toLocaleTimeString();
+            } else {
+                connectionTimeEl.textContent = '--';
+            }
+        }
+
+        // Update connection time every second
+        setInterval(() => {
+            if (isConnected && connectionStartTime) {
+                const elapsed = Math.floor((Date.now() - connectionStartTime.getTime()) / 1000);
+                const minutes = Math.floor(elapsed / 60);
+                const seconds = elapsed % 60;
+                if (minutes > 0) {
+                    connectionTimeEl.textContent = `${minutes}m ${seconds}s ago`;
+                } else {
+                    connectionTimeEl.textContent = `${seconds}s ago`;
+                }
+            }
+        }, 1000);
+    </script>
+</body>
+</html>

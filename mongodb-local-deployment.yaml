@@ -1,0 +1,248 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mongodb-local
+  labels:
+    app: mongodb-local
+    environment: local
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongodb-local
+  template:
+    metadata:
+      labels:
+        app: mongodb-local
+        environment: local
+    spec:
+      containers:
+      - name: mongodb
+        image: mongo:7.0
+        command:
+          - mongod
+          - --replSet
+          - rs0
+          - --bind_ip_all
+          - --port
+          - "27050"
+        ports:
+        - containerPort: 27050
+          name: mongodb
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        volumeMounts:
+        - name: mongodb-data
+          mountPath: /data/db
+        - name: mongodb-config
+          mountPath: /data/configdb
+        - name: mongodb-init
+          mountPath: /docker-entrypoint-initdb.d
+        livenessProbe:
+          tcpSocket:
+            port: 27050
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 6
+        readinessProbe:
+          tcpSocket:
+            port: 27050
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 6
+      volumes:
+      - name: mongodb-data
+        emptyDir: {}
+      - name: mongodb-config
+        emptyDir: {}
+      - name: mongodb-init
+        configMap:
+          name: mongodb-init-script
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mongodb-init-script
+data:
+  init-replica-set.js: |
+    // Wait for MongoDB to be ready, then initialize replica set
+    sleep(5000);
+    
+    try {
+      // Check if replica set is already initialized
+      var status = rs.status();
+      print("Replica set already initialized");
+    } catch (e) {
+      // Initialize replica set if not already done
+      print("Initializing replica set...");
+      rs.initiate({
+        _id: "rs0",
+        members: [
+          { _id: 0, host: "mongodb-local-service:27050" }
+        ]
+      });
+      
+      // Wait for replica set to be ready
+      sleep(10000);
+      
+      // Create the reactive_messages database and a test collection
+      use('reactive_messages');
+      db.createCollection('messages');
+      
+      print("Replica set initialized successfully for change streams");
+    }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongodb-local-service
+  labels:
+    app: mongodb-local
+spec:
+  selector:
+    app: mongodb-local
+  ports:
+  - name: mongodb
+    protocol: TCP
+    port: 27050
+    targetPort: 27050
+  type: ClusterIP
+---
+# Job to initialize replica set after MongoDB is ready
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mongodb-init-replicaset
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: mongodb-init
+        image: mongo:7.0
+        command:
+        - /bin/bash
+        - -c
+        - |
+          # Wait for MongoDB to be ready without authentication
+          until mongosh --host mongodb-local-service:27050 --eval "print('MongoDB is ready')" >/dev/null 2>&1; do
+            echo "Waiting for MongoDB to be ready..."
+            sleep 5
+          done
+          
+          # Initialize replica set if not already done
+          mongosh --host mongodb-local-service:27050 --eval "
+            try {
+              var status = rs.status();
+              print('Replica set already initialized');
+            } catch (e) {
+              print('Initializing replica set...');
+              rs.initiate({
+                _id: 'rs0',
+                members: [
+                  { _id: 0, host: 'mongodb-local-service:27050' }
+                ]
+              });
+              
+              // Wait for replica set to become primary
+              var timeout = 60;
+              while (timeout > 0) {
+                try {
+                  if (rs.isMaster().ismaster) {
+                    print('Replica set is ready');
+                    break;
+                  }
+                } catch (e) {}
+                print('Waiting for replica set to be ready...');
+                sleep(2000);
+                timeout -= 2;
+              }
+              
+              if (timeout <= 0) {
+                print('Timeout waiting for replica set');
+                quit(1);
+              }
+              
+              print('Replica set initialized successfully');
+            }
+          "
+---
+# MongoDB Express - Web-based MongoDB admin interface
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mongo-express-local
+  labels:
+    app: mongo-express-local
+    environment: local
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongo-express-local
+  template:
+    metadata:
+      labels:
+        app: mongo-express-local
+        environment: local
+    spec:
+      containers:
+      - name: mongo-express
+        image: mongo-express:1.0.0
+        ports:
+        - containerPort: 8081
+          name: http
+        env:
+        - name: ME_CONFIG_MONGODB_URL
+          value: "mongodb://mongodb-local-service:27050/?replicaSet=rs0"
+        - name: ME_CONFIG_BASICAUTH_USERNAME
+          value: "admin"
+        - name: ME_CONFIG_BASICAUTH_PASSWORD
+          value: "admin123"
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8081
+          initialDelaySeconds: 180
+          periodSeconds: 30
+          timeoutSeconds: 15
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8081
+          initialDelaySeconds: 150
+          periodSeconds: 10
+          timeoutSeconds: 10
+          failureThreshold: 3
+          successThreshold: 1
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongo-express-local-service
+  labels:
+    app: mongo-express-local
+spec:
+  selector:
+    app: mongo-express-local
+  ports:
+  - name: http
+    protocol: TCP
+    port: 8081
+    targetPort: 8081
+  type: ClusterIP

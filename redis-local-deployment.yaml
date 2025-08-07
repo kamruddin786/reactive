@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-local
+  labels:
+    app: redis-local
+    environment: local
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis-local
+  template:
+    metadata:
+      labels:
+        app: redis-local
+        environment: local
+    spec:
+      containers:
+      - name: redis
+        image: redis:7-alpine
+        ports:
+        - containerPort: 6379
+          name: redis
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "50m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        volumeMounts:
+        - name: redis-data
+          mountPath: /data
+        command: ["redis-server"]
+        args: ["--appendonly", "yes", "--maxmemory", "200mb", "--maxmemory-policy", "allkeys-lru"]
+        livenessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: redis-data
+        emptyDir: {}  # Use emptyDir for local development (data lost on pod restart)
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-local-service
+  labels:
+    app: redis-local
+spec:
+  selector:
+    app: redis-local
+  ports:
+  - name: redis
+    protocol: TCP
+    port: 6379
+    targetPort: 6379
+  type: ClusterIP
+
