@@ -28,6 +28,7 @@ public class NotificationConfig {
         if(mongoStreamEvents != null) {
             // Start distributed monitoring with the reactive UserNotificationConsumer
             mongoStreamEvents.startDistributedMonitoring("messages", userNotificationConsumer);
+//            mongoStreamEvents.startDistributedMonitoringWithStreams("messages", streamNotificationConsumer);
             logger.info("Started distributed monitoring for messages collection with reactive notifications");
         } else {
             logger.error("MongoStreamEvents is null, cannot start distributed monitoring.");

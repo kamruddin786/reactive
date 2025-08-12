@@ -5,6 +5,9 @@ import org.bson.Document;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.connection.stream.MapRecord;
+import org.springframework.data.redis.connection.stream.RecordId;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
@@ -14,6 +17,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
 @Service
@@ -24,8 +28,14 @@ public class UserNotificationConsumer implements Consumer<Document> {
     @Autowired
     private MongoStreamEvents mongoStreamEvents;
 
+    @Autowired
+    private RedisTemplate<String, Object> redisTemplate;
+
     // Map to store user-specific Flux sinks
     private final Map<Long, Sinks.Many<ServerSentEvent<MessageNotification>>> userSinks = new ConcurrentHashMap<>();
+
+    // Track termination state to prevent duplicate logs
+    private final Map<Long, AtomicBoolean> userTerminationState = new ConcurrentHashMap<>();
 
     @PostConstruct
     public void initialize() {
@@ -59,6 +69,9 @@ public class UserNotificationConsumer implements Consumer<Document> {
     public Flux<ServerSentEvent<MessageNotification>> createUserStream(Long userId) {
         logger.info("Creating SSE stream for user: {}", userId);
 
+        // Reset termination state for this user
+        userTerminationState.put(userId, new AtomicBoolean(false));
+
         // Create or get existing sink for this user
         Sinks.Many<ServerSentEvent<MessageNotification>> sink = userSinks.computeIfAbsent(userId,
             k -> Sinks.many().multicast().onBackpressureBuffer());
@@ -70,12 +83,22 @@ public class UserNotificationConsumer implements Consumer<Document> {
                 sendConnectionEvent(userId);
             })
             .doOnCancel(() -> {
-                logger.info("User {} cancelled notification stream", userId);
-                cleanupUserSink(userId);
+                AtomicBoolean terminated = userTerminationState.get(userId);
+                if (terminated != null && terminated.compareAndSet(false, true)) {
+                    logger.info("User {} cancelled notification stream", userId);
+                    cleanupUserSink(userId);
+                }
             })
             .doOnTerminate(() -> {
-                logger.info("User {} notification stream terminated", userId);
-                cleanupUserSink(userId);
+                AtomicBoolean terminated = userTerminationState.get(userId);
+                if (terminated != null && terminated.compareAndSet(false, true)) {
+                    logger.info("User {} notification stream terminated", userId);
+                    cleanupUserSink(userId);
+                }
+            })
+            .doFinally(signalType -> {
+                // Clean up termination state when stream is completely done
+                userTerminationState.remove(userId);
             })
             .onErrorResume(error -> {
                 logger.error("Error in user {} stream: {}", userId, error.getMessage());

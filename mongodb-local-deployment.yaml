@@ -202,10 +202,6 @@ spec:
         env:
         - name: ME_CONFIG_MONGODB_URL
           value: "mongodb://mongodb-local-service:27050/?replicaSet=rs0"
-        - name: ME_CONFIG_BASICAUTH_USERNAME
-          value: "admin"
-        - name: ME_CONFIG_BASICAUTH_PASSWORD
-          value: "admin123"
         resources:
           requests:
             memory: "64Mi"

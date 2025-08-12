@@ -12,7 +12,7 @@ import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSeriali
 import org.springframework.data.redis.serializer.StringRedisSerializer;
 
 @Configuration
-@Profile("k8s")
+//@Profile("k8s")
 public class RedisConfig {
 
     @Value("${spring.redis.host:redis-service}")

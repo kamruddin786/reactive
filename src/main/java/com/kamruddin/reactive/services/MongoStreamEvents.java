@@ -13,8 +13,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.context.annotation.DependsOn;
+import org.springframework.data.redis.connection.stream.MapRecord;
 
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.function.Consumer;
 import java.util.concurrent.TimeUnit;
 import java.time.Duration;
@@ -33,6 +35,9 @@ public class MongoStreamEvents {
     @Autowired
     private RedisTemplate<String, Object> redisTemplate;
 
+    @Autowired
+    private RedisStreamService redisStreamService;
+
     private static final String CHANGE_STREAM_LOCK_PREFIX = "changestream:lock:";
     private static final String HEARTBEAT_PREFIX = "changestream:heartbeat:";
     private static final String PROCESSED_DOCS_KEY_PREFIX = "processed:";
@@ -42,6 +47,7 @@ public class MongoStreamEvents {
     private static final int HEARTBEAT_INTERVAL_SECONDS = 10;
     private static final int HEARTBEAT_TIMEOUT_SECONDS = 25;
     private static final int PROCESSED_DOC_TTL_SECONDS = 300; // 5 minutes
+    private static final String REDIS_STREAM_PREFIX = "mongodb:events:";
 
     // Track active change streams in this pod
     private final Map<String, Boolean> activeStreams = new ConcurrentHashMap<>();
@@ -151,6 +157,7 @@ public class MongoStreamEvents {
         if (processor != null) {
             logger.info("Pod {} attempting to take over leadership for collection '{}'", podName, collectionName);
             startDistributedMonitoring(collectionName, processor);
+//            startDistributedMonitoringWithStreams(collectionName, processor);
         }
     }
 
@@ -262,6 +269,206 @@ public class MongoStreamEvents {
     }
 
     /**
+     * Enhanced distributed monitoring using Redis streams for guaranteed delivery
+     * This replaces the pub/sub approach with persistent streams
+     */
+    public void startDistributedMonitoringWithStreams(String collectionName, Consumer<Document> processor) {
+        logger.info("Starting distributed monitoring with Redis streams for collection: {}", collectionName);
+
+        // Register processor for potential failover
+        registeredProcessors.put(collectionName, processor);
+
+        // Start change stream watcher (only one pod will succeed initially)
+        watchForNewEntriesWithStreams(collectionName)
+            .subscribe(
+                changeDoc -> logger.debug("Change stream active for collection '{}'", collectionName),
+                error -> {
+                    logger.error("Change stream error for collection '{}': {}", collectionName, error.getMessage());
+                    activeStreams.put(collectionName, false);
+                },
+                () -> {
+                    logger.info("Change stream completed for collection '{}'", collectionName);
+                    activeStreams.put(collectionName, false);
+                }
+            );
+
+        // All pods subscribe to Redis stream events with guaranteed delivery
+        subscribeToDocumentStream(collectionName)
+            .subscribe(
+                streamRecord -> {
+                    try {
+                        // Extract document from stream record
+                        Map<Object, Object> recordData = streamRecord.getValue();
+                        String documentJson = (String) recordData.get("document");
+
+                        if (documentJson != null) {
+                            Document document = Document.parse(documentJson);
+                            processor.accept(document);
+                            logger.debug("Processed guaranteed document from stream '{}'", collectionName);
+                        }
+                    } catch (Exception e) {
+                        logger.error("Error processing stream document from collection '{}': {}",
+                            collectionName, e.getMessage(), e);
+                        // Return false to indicate processing failure - message won't be acknowledged
+                        throw new RuntimeException("Processing failed", e);
+                    }
+                },
+                error -> logger.error("Error in stream monitoring for collection '{}': {}",
+                    collectionName, error.getMessage()),
+                () -> logger.info("Stream monitoring completed for collection '{}'", collectionName)
+            );
+    }
+
+    /**
+     * Enhanced change stream that publishes to Redis streams instead of pub/sub
+     */
+    private Flux<ChangeStreamDocument<Document>> watchForNewEntriesWithStreams(String collectionName) {
+        String lockKey = CHANGE_STREAM_LOCK_PREFIX + collectionName;
+        String podName = getPodName();
+
+        return Flux.<ChangeStreamDocument<Document>>create(sink -> {
+            String lockValue = podName + ":" + System.currentTimeMillis();
+            Boolean lockAcquired = redisTemplate.opsForValue()
+                .setIfAbsent(lockKey, lockValue, LOCK_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+            if (Boolean.TRUE.equals(lockAcquired)) {
+                logger.info("Pod {} acquired change stream lock for collection: {}", podName, collectionName);
+
+                activeStreams.put(collectionName, true);
+                redisTemplate.opsForSet().add(LEADER_REGISTRY_KEY, collectionName);
+                updateHeartbeat(collectionName, podName);
+
+                try {
+                    mongoTemplate.getCollection(collectionName)
+                        .watch(Collections.singletonList(
+                            Document.parse("{ $match: { operationType: 'insert' } }")
+                        ))
+                        .forEach(changeDoc -> {
+                            if (changeDoc.getOperationType() == OperationType.INSERT) {
+                                updateHeartbeat(collectionName, podName);
+
+                                String docId = getDocumentId(changeDoc);
+                                String processedKey = PROCESSED_DOCS_KEY_PREFIX + collectionName + ":" + docId;
+
+                                Boolean wasProcessed = redisTemplate.opsForValue()
+                                    .setIfAbsent(processedKey, "processed", PROCESSED_DOC_TTL_SECONDS, TimeUnit.SECONDS);
+
+                                if (Boolean.TRUE.equals(wasProcessed)) {
+                                    // Publish to Redis stream for guaranteed delivery
+                                    publishDocumentToStream(collectionName, changeDoc);
+                                    sink.next(changeDoc);
+                                    logger.info("New entry published to stream for collection '{}': {}",
+                                        collectionName, docId);
+                                } else {
+                                    logger.debug("Document {} already processed for collection '{}'", docId, collectionName);
+                                }
+
+                                renewLockIfOwned(lockKey, lockValue);
+                            }
+                        });
+                } catch (Exception e) {
+                    logger.error("Error in change stream for collection '{}': {}", collectionName, e.getMessage(), e);
+                    sink.error(e);
+                } finally {
+                    cleanupLeadership(collectionName, lockKey, lockValue);
+                }
+            } else {
+                logger.info("Pod {} could not acquire change stream lock for collection: {}", podName, collectionName);
+                sink.complete();
+            }
+        })
+        .subscribeOn(Schedulers.boundedElastic())
+        .doOnError(error -> {
+            logger.error("Error in distributed change stream for collection '{}': {}", collectionName, error.getMessage());
+            cleanupLeadership(collectionName, lockKey, podName + ":" + System.currentTimeMillis());
+        })
+        .onErrorResume(error -> {
+            logger.warn("Resuming change stream for collection '{}' after error", collectionName);
+            cleanupLeadership(collectionName, lockKey, podName + ":" + System.currentTimeMillis());
+            return Flux.empty().delayElements(Duration.ofSeconds(5))
+                .flatMap(ignored -> watchForNewEntriesWithStreams(collectionName));
+        });
+    }
+
+    /**
+     * Subscribe to Redis stream for guaranteed message delivery
+     */
+    public Flux<MapRecord<String, Object, Object>> subscribeToDocumentStream(String collectionName) {
+        String streamKey = REDIS_STREAM_PREFIX + collectionName;
+
+        return redisStreamService.subscribeToStream(streamKey, message -> {
+            try {
+                // Process the message and return true for successful processing
+                logger.debug("Processing stream message: {}", message.getId());
+                return true; // Message will be acknowledged
+            } catch (Exception e) {
+                logger.error("Error processing stream message: {}", e.getMessage(), e);
+                return false; // Message won't be acknowledged and will be retried
+            }
+        });
+    }
+
+    /**
+     * Publish document to Redis stream instead of pub/sub
+     */
+    private void publishDocumentToStream(String collectionName, ChangeStreamDocument<Document> changeDoc) {
+        try {
+            String streamKey = REDIS_STREAM_PREFIX + collectionName;
+            Document fullDoc = changeDoc.getFullDocument();
+
+            if (fullDoc != null) {
+                Map<String, Object> streamData = new HashMap<>();
+                streamData.put("document", fullDoc.toJson());
+                streamData.put("collectionName", collectionName);
+                streamData.put("operationType", changeDoc.getOperationType().toString());
+                streamData.put("documentId", getDocumentId(changeDoc));
+                streamData.put("producer", getPodName());
+
+                String messageId = redisStreamService.publishToStream(streamKey, streamData);
+                logger.debug("Published document to stream '{}' with message ID: {}", streamKey, messageId);
+            }
+        } catch (Exception e) {
+            logger.error("Error publishing document to stream: {}", e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Get monitoring information for Redis streams
+     */
+    public Map<String, Object> getStreamMonitoringInfo(String collectionName) {
+        String streamKey = REDIS_STREAM_PREFIX + collectionName;
+        Map<String, Object> info = redisStreamService.getStreamInfo(streamKey);
+
+        // Add consumer group information
+        redisStreamService.logConsumerGroupInfo(streamKey);
+
+        return info;
+    }
+
+    // ...existing startMonitoring method for backward compatibility...
+    public void startMonitoring(String collectionName, Consumer<Document> processor) {
+        logger.info("Starting monitoring for new entries in collection: {}", collectionName);
+
+        watchForNewEntries(collectionName)
+            .map(ChangeStreamDocument::getFullDocument)
+            .filter(java.util.Objects::nonNull)
+            .subscribe(
+                document -> {
+                    try {
+                        processor.accept(document);
+                        logger.debug("Processed new document from collection '{}'", collectionName);
+                    } catch (Exception e) {
+                        logger.error("Error processing document from collection '{}': {}",
+                            collectionName, e.getMessage(), e);
+                    }
+                },
+                error -> logger.error("Error in monitoring stream for collection '{}': {}",
+                    collectionName, error.getClass().getSimpleName(), error),
+                () -> logger.info("Monitoring stream completed for collection '{}'", collectionName)
+            );
+    }
+
+    /**
      * Clean up leadership state when stream ends or fails
      */
     private void cleanupLeadership(String collectionName, String lockKey, String lockValue) {
@@ -308,9 +515,9 @@ public class MongoStreamEvents {
                             // First try direct parsing
                             document = Document.parse(jsonDoc);
                         } catch (Exception e) {
-                            logger.warn("Direct JSON parsing failed for collection '{}', attempting to handle MongoDB extended JSON: {}", 
+                            logger.warn("Direct JSON parsing failed for collection '{}', attempting to handle MongoDB extended JSON: {}",
                                 collectionName, e.getMessage());
-                            
+
                             try {
                                 // Handle MongoDB extended JSON format (e.g., {"$date": "..."})
                                 String cleanedJson = preprocessMongoExtendedJson(jsonDoc);
@@ -318,9 +525,9 @@ public class MongoStreamEvents {
                                 logger.debug("Successfully parsed MongoDB extended JSON for collection '{}'", collectionName);
                             } catch (Exception e2) {
                                 // Last resort: try handling double-encoded JSON
-                                logger.warn("MongoDB extended JSON parsing failed for collection '{}', attempting double-encoded JSON: {}", 
+                                logger.warn("MongoDB extended JSON parsing failed for collection '{}', attempting double-encoded JSON: {}",
                                     collectionName, e2.getMessage());
-                                
+
                                 String cleanedJson = jsonDoc.replace("\\\"", "\"");
                                 if (cleanedJson.startsWith("\"") && cleanedJson.endsWith("\"")) {
                                     cleanedJson = cleanedJson.substring(1, cleanedJson.length() - 1);
@@ -386,28 +593,6 @@ public class MongoStreamEvents {
             );
     }
 
-    // ...existing startMonitoring method for backward compatibility...
-    public void startMonitoring(String collectionName, Consumer<Document> processor) {
-        logger.info("Starting monitoring for new entries in collection: {}", collectionName);
-
-        watchForNewEntries(collectionName)
-            .map(ChangeStreamDocument::getFullDocument)
-            .filter(java.util.Objects::nonNull)
-            .subscribe(
-                document -> {
-                    try {
-                        processor.accept(document);
-                        logger.debug("Processed new document from collection '{}'", collectionName);
-                    } catch (Exception e) {
-                        logger.error("Error processing document from collection '{}': {}",
-                            collectionName, e.getMessage(), e);
-                    }
-                },
-                error -> logger.error("Error in monitoring stream for collection '{}': {}",
-                    collectionName, error.getClass().getSimpleName(), error),
-                () -> logger.info("Monitoring stream completed for collection '{}'", collectionName)
-            );
-    }
 
     // Helper methods
     private void publishDocumentEvent(String collectionName, ChangeStreamDocument<Document> changeDoc) {
