@@ -4,7 +4,6 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.kamruddin.reactive.models.Message;
-import com.kamruddin.reactive.repositories.MessageRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,9 +22,9 @@ public class MessageImportService {
     
     private static final Logger logger = LoggerFactory.getLogger(MessageImportService.class);
     private static final long DEFAULT_DELAY_MS = 100; // Default delay of 100ms between iterations
-    
+
     @Autowired
-    private MessageRepository messageRepository;
+    private MessagePublisher messagePublisher;
     
     /**
      * Reads messages from CSV file and saves them to MongoDB with delay between each record
@@ -57,7 +56,7 @@ public class MessageImportService {
                     
                     try {
                         Message message = Message.fromCsvLine(line);
-                        messageRepository.save(message);
+                        messagePublisher.publishMessage(message);
                         successCount.incrementAndGet();
                         
                         logger.debug("Imported message with ID: {}", message.getId());
@@ -115,7 +114,7 @@ public class MessageImportService {
             
             for (Message message : messages) {
                 try {
-                    messageRepository.save(message);
+                    messagePublisher.publishMessage(message);
                     successCount.incrementAndGet();
                     
                     logger.debug("Imported message with ID: {}", message.getId());
@@ -174,22 +173,7 @@ public class MessageImportService {
     public ImportResult importAllMessages() {
         return importAllMessages(DEFAULT_DELAY_MS);
     }
-    
-    /**
-     * Get total count of messages in the database
-     */
-    public long getMessageCount() {
-        return messageRepository.count();
-    }
-    
-    /**
-     * Clear all messages from the database
-     */
-    public void clearAllMessages() {
-        messageRepository.deleteAll();
-        logger.info("All messages cleared from database");
-    }
-    
+
     /**
      * Result object for import operations
      */

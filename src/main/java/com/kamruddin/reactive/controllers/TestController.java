@@ -1,6 +1,6 @@
 package com.kamruddin.reactive.controllers;
 
-import com.kamruddin.reactive.services.UserNotificationConsumer;
+import com.kamruddin.reactive.models.MessageNotification;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
@@ -110,7 +110,7 @@ public class TestController {
                     webClient.get()
                         .uri("/api/notifications/user/{userId}/stream", userId)
                         .retrieve()
-                        .bodyToFlux(UserNotificationConsumer.MessageNotification.class)
+                        .bodyToFlux(MessageNotification.class)
                         .timeout(Duration.ofSeconds(30)) // Request timeout
                         .onErrorResume(error -> {
                             logger.warn("Error for user {} (tick {}): {}", userId, tick, error.getMessage());

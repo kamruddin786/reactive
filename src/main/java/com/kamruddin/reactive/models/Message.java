@@ -6,42 +6,33 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.mapping.Document;
-import org.springframework.data.mongodb.core.mapping.Field;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Objects;
 
-@Document(collection = "messages")
 public class Message {
     
     @Id
     @JsonProperty("id")
     private Long id;
     
-    @Field("type")
     @JsonProperty("type")
     private String type;
     
-    @Field("message")
     @JsonProperty("message")
     private String message;
     
-    @Field("timestamp")
     @JsonProperty("timestamp")
     @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss.SSSSSS")
     private LocalDateTime timestamp;
     
-    @Field("severity")
     @JsonProperty("severity")
     private String severity;
     
-    @Field("source")
     @JsonProperty("source")
     private String source;
     
-    @Field("user_id")
     @JsonProperty("user_id")
     private Long userId;
     
