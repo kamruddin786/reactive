@@ -1,5 +1,6 @@
 package com.kamruddin.reactive.controllers;
 
+import com.kamruddin.reactive.models.Message;
 import com.kamruddin.reactive.services.MessageImportService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -8,6 +9,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -108,6 +110,30 @@ public class MessageImportController {
 
         } catch (Exception e) {
             logger.error("Error importing all messages: {}", e.getMessage());
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("error", e.getMessage());
+
+            return ResponseEntity.badRequest().body(response);
+        }
+    }
+
+    @PostMapping("/import/messages")
+    public ResponseEntity<Map<String, Object>> importMessages(@RequestBody List<Message> messages) {
+        logger.info("Importing {} messages", messages.size());
+
+        try {
+            int importedCount = messageImportService.importMessages(messages);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("importedCount", importedCount);
+            response.put("source", "API");
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            logger.error("Error importing messages: {}", e.getMessage());
 
             Map<String, Object> response = new HashMap<>();
             response.put("success", false);

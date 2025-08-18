@@ -394,6 +394,7 @@
                     <strong>User:</strong> ${messageData.userId || 'N/A'}
                     ${messageData.timestamp ? `<br><strong>Message Timestamp:</strong> ${messageData.timestamp}` : ''}
                     ${messageData.notificationTime ? `<br><strong>Received:</strong> ${messageData.notificationTime}` : ''}
+                    ${messageData.podId ? `<br><strong>POD ID:</strong> ${messageData.podId}` : ''}
                 </div>
                 ${eventId ? `<div style="font-size: 0.8em; color: #888; margin-top: 8px;">Event ID: ${eventId}</div>` : ''}
             `;

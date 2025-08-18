@@ -126,6 +126,7 @@ public class MessageNotificationConsumer implements Consumer<Message> {
         Sinks.Many<ServerSentEvent<MessageNotification>> sink = userSinks.get(userId);
 
         if (sink != null) {
+            logger.info("Current subscriber count for user {}: {}", userId, sink.currentSubscriberCount());
             ServerSentEvent<MessageNotification> event = ServerSentEvent.<MessageNotification>builder()
                     .event("new-message")
                     .id(String.valueOf(System.currentTimeMillis()))
@@ -165,7 +166,7 @@ public class MessageNotificationConsumer implements Consumer<Message> {
             if (timestampObj != null) {
                 notification.setTimestamp(timestampObj.toString());
             }
-
+            notification.setPodId(getHostname()); // Assuming getHostname() returns the pod ID
             notification.setNotificationTime(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
 
         } catch (Exception e) {
@@ -173,6 +174,15 @@ public class MessageNotificationConsumer implements Consumer<Message> {
         }
 
         return notification;
+    }
+
+    private String getHostname() {
+        try {
+            return System.getenv("HOSTNAME") != null ? System.getenv("HOSTNAME") : java.net.InetAddress.getLocalHost().getHostName();
+        } catch (Exception e) {
+            logger.error("Failed to get hostname: {}", e.getMessage(), e);
+            return "unknown-host";
+        }
     }
 
     /**

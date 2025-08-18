@@ -9,6 +9,7 @@ public class MessageNotification {
     private String source;
     private Long userId;
     private String notificationTime;
+    private String podId;
 
     // Getters and setters
     public Long getId() { return id; }
@@ -35,6 +36,14 @@ public class MessageNotification {
     public String getNotificationTime() { return notificationTime; }
     public void setNotificationTime(String notificationTime) { this.notificationTime = notificationTime; }
 
+    public String getPodId() {
+        return podId;
+    }
+
+    public void setPodId(String podId) {
+        this.podId = podId;
+    }
+
     @Override
     public String toString() {
         return "MessageNotification{" +
@@ -46,6 +55,7 @@ public class MessageNotification {
                 ", source='" + source + '\'' +
                 ", userId=" + userId +
                 ", notificationTime='" + notificationTime + '\'' +
+                ", podId='" + podId + '\'' +
                 '}';
     }
 }

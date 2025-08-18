@@ -1,5 +1,6 @@
 package com.kamruddin.reactive.services;
 
+import com.kamruddin.reactive.utils.SchedulerUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -34,6 +35,8 @@ public class DistributedRecordProcessor implements IRecordProcessor {
 
     @Scheduled(fixedDelay = 10000)
     public void processRecords() throws UnknownHostException {
+        if (!SchedulerUtil.enableScheduler)
+            return;
         String podName = System.getenv("HOSTNAME");
         String lockValue = podName + ":" + System.currentTimeMillis();
 

@@ -1,6 +1,7 @@
 package com.kamruddin.reactive.controllers;
 
 import com.kamruddin.reactive.models.MessageNotification;
+import com.kamruddin.reactive.utils.SchedulerUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
@@ -13,6 +14,7 @@ import reactor.core.publisher.Flux;
 import reactor.netty.http.client.HttpClient;
 import reactor.netty.resources.ConnectionProvider;
 import org.springframework.http.client.reactive.ReactorClientHttpConnector;
+import reactor.util.retry.Retry;
 
 import java.time.Duration;
 import java.util.Map;
@@ -98,36 +100,41 @@ public class TestController {
     private Flux<String> createPersistentConnection(String userId) {
         return Flux.defer(() -> {
             if (!connectionsActive.get()) {
-                return Flux.empty(); // Don't create if connections are being destroyed
+                return Flux.empty();
             }
 
-            // Create a persistent connection that will retry and stay alive
-            Disposable connection = Flux.interval(Duration.ofSeconds(30)) // Heartbeat every 30 seconds
-                .takeWhile(tick -> connectionsActive.get()) // Keep alive while flag is true
-                .timeout(Duration.ofMinutes(CONNECTION_TIMEOUT_MINUTES)) // Timeout after specified minutes
-                .delayElements(Duration.ofMillis(100)) // Small delay between requests to avoid bursts
-                .flatMap(tick ->
-                    webClient.get()
-                        .uri("/api/notifications/user/{userId}/stream", userId)
-                        .retrieve()
-                        .bodyToFlux(MessageNotification.class)
-                        .timeout(Duration.ofSeconds(30)) // Request timeout
-                        .onErrorResume(error -> {
-                            logger.warn("Error for user {} (tick {}): {}", userId, tick, error.getMessage());
-                            return Flux.empty(); // Continue on error
-                        })
-                )
-                .subscribe(
-                    response -> logger.debug("############## Response for user {}: {}", userId, response),
-                    error -> {
-                        logger.error("Connection error for user {}: {}", userId, error.getMessage());
-                        activeConnections.remove(userId); // Remove failed connection
-                    },
-                    () -> {
-                        logger.info("Connection completed for user {}", userId);
-                        activeConnections.remove(userId); // Remove completed connection
-                    }
-                );
+            // Define the logic for a single, persistent SSE connection
+            Flux<MessageNotification> sseConnection = webClient.get()
+                    .uri("/api/notifications/user/{userId}/stream", userId)
+                    .retrieve()
+                    .bodyToFlux(MessageNotification.class)
+                    .doOnSubscribe(subscription -> logger.info("Subscribed to SSE stream for user {}", userId))
+                    .doOnError(error -> logger.warn("Error on SSE stream for user {}: {}", userId, error.getMessage()))
+                    .doOnCancel(() -> logger.info("SSE stream for user {} was cancelled.", userId))
+                    .retryWhen(Retry.backoff(Long.MAX_VALUE, Duration.ofSeconds(5))
+                            .maxBackoff(Duration.ofMinutes(1))
+                            .doBeforeRetry(retrySignal -> logger.info("Reconnecting for user {}... Attempt #{}. Cause: {}",
+                                    userId,
+                                    retrySignal.totalRetries() + 1,
+                                    retrySignal.failure().getLocalizedMessage()))
+                            .filter(throwable -> connectionsActive.get()) // Only retry if connections are supposed to be active
+                    );
+
+            // Subscribe to the persistent connection and manage its lifecycle
+            Disposable connection = sseConnection
+                    .takeWhile(notification -> connectionsActive.get()) // Stop when connections are globally destroyed
+                    .timeout(Duration.ofMinutes(CONNECTION_TIMEOUT_MINUTES)) // Overall timeout for the connection lifecycle
+                    .subscribe(
+                            response -> logger.info("############## Response for user {}: {}", userId, response),
+                            error -> {
+                                logger.error("Connection permanently failed for user {}: {}", userId, error.getMessage());
+                                activeConnections.remove(userId); // Remove on permanent failure (e.g., timeout)
+                            },
+                            () -> {
+                                logger.info("Connection completed for user {}", userId);
+                                activeConnections.remove(userId); // Remove on completion
+                            }
+                    );
 
             activeConnections.put(userId, connection);
             return Flux.just(userId);
@@ -200,4 +207,17 @@ public class TestController {
         }
     }
 
+    @GetMapping("/disable-schedules")
+    public ResponseEntity<String> disableSchedules() {
+        logger.info("Disabling all schedules");
+        SchedulerUtil.disableScheduler();
+        return ResponseEntity.ok("All schedules have been disabled");
+    }
+
+    @GetMapping("/enable-schedules")
+    public ResponseEntity<String> enableSchedules() {
+        logger.info("Enabling all schedules");
+        SchedulerUtil.enableScheduler();
+        return ResponseEntity.ok("All schedules have been enabled");
+    }
 }

@@ -111,29 +111,9 @@ public class MessageImportService {
             );
             
             logger.info("Found {} messages in JSON file", messages.size());
-            
-            for (Message message : messages) {
-                try {
-                    messagePublisher.publishMessage(message);
-                    successCount.incrementAndGet();
-                    
-                    logger.debug("Imported message with ID: {}", message.getId());
-                    
-                    // Add delay between iterations
-                    if (delayMs > 0) {
-                        Thread.sleep(delayMs);
-                    }
-                    
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    logger.error("JSON import was interrupted");
-                    throw new RuntimeException("JSON import was interrupted", e);
-                } catch (Exception e) {
-                    errorCount.incrementAndGet();
-                    logger.error("Error saving message with ID: {} - Error: {}", message.getId(), e.getMessage());
-                }
-            }
-            
+
+            publishMessagesToRedis(delayMs, messages, successCount, errorCount);
+
         } catch (IOException e) {
             logger.error("Error reading JSON file: {}", e.getMessage());
             throw new RuntimeException("Failed to read JSON file: " + jsonFileName, e);
@@ -142,7 +122,31 @@ public class MessageImportService {
         logger.info("JSON import completed. Success: {}, Errors: {}", successCount.get(), errorCount.get());
         return successCount.get();
     }
-    
+
+    private void publishMessagesToRedis(long delayMs, List<Message> messages, AtomicInteger successCount, AtomicInteger errorCount) {
+        for (Message message : messages) {
+            try {
+                messagePublisher.publishMessage(message);
+                successCount.incrementAndGet();
+
+                logger.debug("Imported message with ID: {}", message.getId());
+
+                // Add delay between iterations
+                if (delayMs > 0) {
+                    Thread.sleep(delayMs);
+                }
+
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                logger.error("JSON import was interrupted");
+                throw new RuntimeException("JSON import was interrupted", e);
+            } catch (Exception e) {
+                errorCount.incrementAndGet();
+                logger.error("Error saving message with ID: {} - Error: {}", message.getId(), e.getMessage());
+            }
+        }
+    }
+
     /**
      * Convenience method to import from CSV with default delay
      */
@@ -172,6 +176,17 @@ public class MessageImportService {
      */
     public ImportResult importAllMessages() {
         return importAllMessages(DEFAULT_DELAY_MS);
+    }
+
+    public int importMessages(List<Message> messages) {
+        AtomicInteger successCount = new AtomicInteger(0);
+        AtomicInteger errorCount = new AtomicInteger(0);
+        publishMessagesToRedis(100, messages, successCount, errorCount);
+        logger.info("Imported {} messages successfully, {} errors", successCount.get(), errorCount.get());
+        if (errorCount.get() > 0) {
+            logger.warn("Some messages failed to import. Check logs for details.");
+        }
+        return successCount.get();
     }
 
     /**
