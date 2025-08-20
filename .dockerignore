@@ -31,8 +31,8 @@ docker-compose.yml
 
 # Kubernetes
 k8s-*.yaml
-ingress.yaml
-redis-deployment.yaml
+old-deployment/ingress.yaml
+old-deployment/redis-deployment.yaml
 
 # Documentation
 *.md

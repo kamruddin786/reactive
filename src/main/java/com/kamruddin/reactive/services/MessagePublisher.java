@@ -12,6 +12,7 @@ public class MessagePublisher {
 
     private static final Logger logger = LoggerFactory.getLogger(MessagePublisher.class);
     public static final String USER_MESSAGES_TOPIC = "user:messages";
+    public static final String BROADCAST_MESSAGES_TOPIC = "broadcast:messages";
 
     @Autowired
     private RedisTemplate<String, Object> redisTemplate;
@@ -22,23 +23,16 @@ public class MessagePublisher {
      * @return true if published successfully, false otherwise
      */
     public boolean publishMessage(Message message) {
-        try {
-            if (message == null) {
-                logger.warn("Attempted to publish null message");
-                return false;
-            }
+        return publishMessageToTopic(USER_MESSAGES_TOPIC, message);
+    }
 
-            redisTemplate.convertAndSend(USER_MESSAGES_TOPIC, message);
-
-            logger.info("Successfully published message with ID {} to topic {}",
-                       message.getId(), USER_MESSAGES_TOPIC);
-            return true;
-
-        } catch (Exception e) {
-            logger.error("Failed to publish message with ID {} to Redis topic: {}",
-                        message != null ? message.getId() : "null", e.getMessage(), e);
-            return false;
-        }
+    /**
+     * Publishes a broadcast message to all users
+     * @param message The message to broadcast
+     * @return true if published successfully, false otherwise
+     */
+    public boolean broadcastMessage(Message message) {
+        return publishMessageToTopic(BROADCAST_MESSAGES_TOPIC, message);
     }
 
     /**
@@ -63,33 +57,6 @@ public class MessagePublisher {
         } catch (Exception e) {
             logger.error("Failed to publish message with ID {} to topic {}: {}",
                         message != null ? message.getId() : "null", topic, e.getMessage(), e);
-            return false;
-        }
-    }
-
-
-    /**
-     * Publishes a broadcast message to all users
-     * @param message The message to broadcast
-     * @return true if published successfully, false otherwise
-     */
-    public boolean broadcastMessage(Message message) {
-        try {
-            if (message == null) {
-                logger.warn("Attempted to broadcast null message");
-                return false;
-            }
-
-            String broadcastTopic = "broadcast:messages";
-            redisTemplate.convertAndSend(broadcastTopic, message);
-
-            logger.info("Successfully broadcasted message with ID {} to topic {}",
-                       message.getId(), broadcastTopic);
-            return true;
-
-        } catch (Exception e) {
-            logger.error("Failed to broadcast message with ID {}: {}",
-                        message != null ? message.getId() : "null", e.getMessage(), e);
             return false;
         }
     }

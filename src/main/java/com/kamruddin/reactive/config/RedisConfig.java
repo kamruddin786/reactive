@@ -17,7 +17,7 @@ import org.springframework.data.redis.serializer.StringRedisSerializer;
 //@Profile("k8s")
 public class RedisConfig {
 
-    @Value("${spring.redis.host:localhost}")
+    @Value("${spring.redis.host:redis-service}")
     private String redisHost;
 
     @Value("${spring.redis.port:6379}")

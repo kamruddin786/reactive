@@ -5,7 +5,7 @@
 
 set -e
 
-echo "🚀 Starting Local Kubernetes Deployment for Reactive SSE Application with MongoDB"
+echo "🚀 Starting Local Kubernetes Deployment for Reactive SSE Application"
 
 # Color codes for output
 RED='\033[0;31m'
@@ -48,7 +48,7 @@ print_success "Connected to Kubernetes cluster"
 
 # Step 1: Build Docker image
 print_status "Building Docker image..."
-docker build -t reactive-sse-app:latest . || {
+docker build -t reactive-sse-app:latest ../. || {
     print_error "Failed to build Docker image"
     exit 1
 }
@@ -86,86 +86,31 @@ else
     print_success "NGINX Ingress Controller already available"
 fi
 
-# Step 4: Deploy MongoDB with Replica Set for Change Streams
-print_status "Deploying MongoDB with Replica Set (required for change streams)..."
-kubectl apply -f mongodb-local-deployment.yaml
-
-print_status "Waiting for MongoDB to be ready (this may take 2-3 minutes)..."
-# First wait for the pod to be created
-kubectl wait --for=condition=PodScheduled --timeout=120s pod -l app=mongodb-local || {
-    print_warning "MongoDB pod scheduling taking longer than expected..."
-    print_status "Checking pod status..."
-    kubectl describe pods -l app=mongodb-local
-}
-
-# Then wait for deployment to be available with longer timeout
-if kubectl wait --for=condition=available --timeout=600s deployment/mongodb-local; then
-    print_success "MongoDB is ready"
-
-    # Initialize replica set manually to ensure it's properly configured
-    print_status "Initializing MongoDB replica set..."
-    kubectl run mongodb-init --image=mongo:7.0 --rm --restart=Never -- mongosh mongodb://mongodb-local-service:27050 --eval "
-    try {
-      var status = rs.status();
-      if (status.ok === 1) {
-        print('Replica set already initialized');
-      }
-    } catch (e) {
-      print('Initializing replica set...');
-      rs.initiate({_id: 'rs0', members: [{_id: 0, host: 'mongodb-local-service:27050'}]});
-      sleep(5000);
-      print('Replica set initialized successfully');
-    }" || print_warning "Replica set initialization had issues but continuing..."
-
-else
-    print_error "MongoDB deployment timed out. Checking status..."
-    kubectl describe deployment mongodb-local
-    kubectl logs deployment/mongodb-local --tail=50
-fi
-
-# Initialize replica set for change streams
-print_status "Initializing MongoDB replica set for change streams..."
-if kubectl wait --for=condition=complete --timeout=300s job/mongodb-init-replicaset; then
-    print_success "MongoDB replica set initialized successfully"
-else
-    print_warning "Replica set initialization may be taking longer. Checking job status..."
-    kubectl describe job mongodb-init-replicaset
-    kubectl logs job/mongodb-init-replicaset
-    print_status "Change streams require replica set - please verify initialization manually if needed"
-fi
-
-print_status "Waiting for Mongo Express to be ready..."
-if kubectl wait --for=condition=available --timeout=60s deployment/mongo-express-local; then
-    print_success "MongoDB with Change Streams support deployed successfully"
-else
-    print_warning "Mongo Express deployment timed out, but continuing..."
-fi
-
-# Step 5: Deploy Redis
+# Step 4: Deploy Redis
 print_status "Deploying Redis..."
 kubectl apply -f redis-local-deployment.yaml
 kubectl wait --for=condition=available --timeout=300s deployment/redis-local
 print_success "Redis deployed successfully"
 
-# Step 5.1: Deploy Redis Commander
+# Step 4.1: Deploy Redis Commander
 print_status "Deploying Redis Commander..."
 kubectl apply -f redis-commander-local.yaml
 kubectl wait --for=condition=available --timeout=300s deployment/redis-commander-local
 print_success "Redis Commander deployed successfully"
 
-# Step 6: Deploy Application
+# Step 5: Deploy Application
 print_status "Deploying Reactive SSE Application..."
 kubectl apply -f k8s-local-deployment.yaml
 print_status "Waiting for application to be ready..."
 kubectl wait --for=condition=available --timeout=300s deployment/reactive-sse-local
 print_success "Application deployed successfully"
 
-# Step 7: Deploy Ingress
+# Step 6: Deploy Ingress
 print_status "Deploying Ingress..."
 kubectl apply -f ingress-local.yaml
 print_success "Ingress deployed successfully"
 
-# Step 8: Display deployment information
+# Step 7: Display deployment information
 echo ""
 echo "📊 Deployment Summary:"
 echo "====================="
@@ -196,7 +141,6 @@ if kubectl config current-context | grep -q "minikube"; then
     echo "   Health Check: http://reactive-sse.local/actuator/health"
     echo ""
     print_status "🗄️  Database Management:"
-    echo "   Mongo Express: http://reactive-sse.local/mongo-express (admin/admin123)"
     echo "   Redis Commander: http://reactive-sse.local/redis-commander"
 else
     echo ""
@@ -215,7 +159,6 @@ else
     echo "   Health Check: http://reactive-sse.local/actuator/health"
     echo ""
     print_status "🗄️  Database Management:"
-    echo "   Mongo Express: http://reactive-sse.local/mongo-express (admin/admin123)"
     echo "   Redis Commander: http://reactive-sse.local/redis-commander"
 fi
 
@@ -223,9 +166,7 @@ echo ""
 print_status "🔧 Management Commands:"
 echo "   Scale up: kubectl scale deployment reactive-sse-local --replicas=3"
 echo "   View logs: kubectl logs -f deployment/reactive-sse-local"
-echo "   MongoDB logs: kubectl logs -f deployment/mongodb-local"
 echo "   Port forward app: kubectl port-forward service/reactive-sse-local-service 8080:8080"
-echo "   Port forward MongoDB: kubectl port-forward service/mongodb-local-service 27050:27050"
 echo ""
 
 print_success "🎉 Local Kubernetes deployment with MongoDB completed successfully!"

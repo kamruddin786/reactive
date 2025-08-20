@@ -56,16 +56,7 @@ public class MessageImportService {
                     
                     try {
                         Message message = Message.fromCsvLine(line);
-                        messagePublisher.publishMessage(message);
-                        successCount.incrementAndGet();
-                        
-                        logger.debug("Imported message with ID: {}", message.getId());
-                        
-                        // Add delay between iterations
-                        if (delayMs > 0) {
-                            Thread.sleep(delayMs);
-                        }
-                        
+                        publishMessageToRedis(delayMs, successCount, errorCount, message);
                     } catch (InterruptedException e) {
                         Thread.currentThread().interrupt();
                         logger.error("CSV import was interrupted");
@@ -112,7 +103,7 @@ public class MessageImportService {
             
             logger.info("Found {} messages in JSON file", messages.size());
 
-            publishMessagesToRedis(delayMs, messages, successCount, errorCount);
+            publishMessages(delayMs, messages, successCount, errorCount);
 
         } catch (IOException e) {
             logger.error("Error reading JSON file: {}", e.getMessage());
@@ -123,19 +114,10 @@ public class MessageImportService {
         return successCount.get();
     }
 
-    private void publishMessagesToRedis(long delayMs, List<Message> messages, AtomicInteger successCount, AtomicInteger errorCount) {
+    private void publishMessages(long delayMs, List<Message> messages, AtomicInteger successCount, AtomicInteger errorCount) {
         for (Message message : messages) {
             try {
-                messagePublisher.publishMessage(message);
-                successCount.incrementAndGet();
-
-                logger.debug("Imported message with ID: {}", message.getId());
-
-                // Add delay between iterations
-                if (delayMs > 0) {
-                    Thread.sleep(delayMs);
-                }
-
+                publishMessageToRedis(delayMs, successCount, errorCount, message);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 logger.error("JSON import was interrupted");
@@ -144,6 +126,20 @@ public class MessageImportService {
                 errorCount.incrementAndGet();
                 logger.error("Error saving message with ID: {} - Error: {}", message.getId(), e.getMessage());
             }
+        }
+    }
+
+    private void publishMessageToRedis(long delayMs, AtomicInteger successCount, AtomicInteger errorCount, Message message) throws InterruptedException {
+        if (messagePublisher.publishMessage(message)) {
+            successCount.incrementAndGet();
+            logger.debug("Imported message with ID: {}", message.getId());
+            // Add delay between iterations
+            if (delayMs > 0) {
+                Thread.sleep(delayMs);
+            }
+        } else {
+            errorCount.incrementAndGet();
+            logger.warn("Failed to publish message with ID: {}", message.getId());
         }
     }
 
@@ -181,7 +177,7 @@ public class MessageImportService {
     public int importMessages(List<Message> messages) {
         AtomicInteger successCount = new AtomicInteger(0);
         AtomicInteger errorCount = new AtomicInteger(0);
-        publishMessagesToRedis(100, messages, successCount, errorCount);
+        publishMessages(100, messages, successCount, errorCount);
         logger.info("Imported {} messages successfully, {} errors", successCount.get(), errorCount.get());
         if (errorCount.get() > 0) {
             logger.warn("Some messages failed to import. Check logs for details.");

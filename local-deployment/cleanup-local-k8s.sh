@@ -3,7 +3,7 @@
 # Cleanup script for Local Kubernetes Deployment
 # Removes all resources created for the Reactive SSE Application
 
-echo "🧹 Cleaning up Local Kubernetes Deployment (including MongoDB)"
+echo "🧹 Cleaning up Local Kubernetes Deployment for Reactive SSE Application"
 
 # Color codes
 RED='\033[0;31m'
@@ -32,18 +32,6 @@ kubectl delete -f ingress-local.yaml --ignore-not-found=true
 print_status "Removing Application Deployment..."
 kubectl delete -f k8s-local-deployment.yaml --ignore-not-found=true
 
-# Remove MongoDB Deployment
-print_status "Removing MongoDB and Mongo Express..."
-kubectl delete -f mongodb-local-deployment.yaml --ignore-not-found=true
-
-# Remove MongoDB initialization job
-print_status "Removing MongoDB replica set initialization job..."
-kubectl delete job mongodb-init-replicaset --ignore-not-found=true
-
-# Remove ConfigMap
-print_status "Removing MongoDB initialization ConfigMap..."
-kubectl delete configmap mongodb-init-script --ignore-not-found=true
-
 # Remove Redis Deployment
 print_status "Removing Redis Deployment..."
 kubectl delete -f redis-local-deployment.yaml --ignore-not-found=true
@@ -65,12 +53,12 @@ print_success "Cleanup completed!"
 # Show remaining resources (if any)
 echo ""
 print_status "Remaining deployments:"
-kubectl get deployments | grep -E "(reactive-sse|redis|mongodb|mongo-express)" || echo "None found"
+kubectl get deployments | grep -E "(reactive-sse|redis)" || echo "None found"
 
 echo ""
 print_status "Remaining services:"
-kubectl get services | grep -E "(reactive-sse|redis|mongodb|mongo-express)" || echo "None found"
+kubectl get services | grep -E "(reactive-sse|redis)" || echo "None found"
 
 echo ""
 print_status "Remaining PVCs (if any):"
-kubectl get pvc | grep -E "(mongodb|redis)" || echo "None found"
+kubectl get pvc | grep -E "(redis)" || echo "None found"

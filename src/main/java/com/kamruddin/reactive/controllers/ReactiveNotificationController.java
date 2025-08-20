@@ -10,8 +10,12 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.util.retry.Retry;
 
 import java.time.Duration;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Map;
 
 @RestController
@@ -39,9 +43,21 @@ public class ReactiveNotificationController {
             @PathVariable Long userId) {
 
         logger.info("Client connecting to reactive SSE stream for user: {}", userId);
+//        Long id, String type, String message, String notificationTime
+        Flux<ServerSentEvent<MessageNotification>> heartBeat = Flux.interval(Duration.ofSeconds(15))
+                .map(tick -> ServerSentEvent.<MessageNotification>builder()
+                        .id(String.valueOf(System.currentTimeMillis()))
+                        .event("heartbeat")
+                        .comment("ping")
+                        .data(new MessageNotification(100L, "heartbeat", "ping to keep connection alive",
+                                LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)))
+                        .build());
 
         return messageNotificationConsumer.createUserStream(userId)
             .timeout(Duration.ofHours(1))
+            .retryWhen(Retry.backoff(3, Duration.ofSeconds(1))
+                .maxBackoff(Duration.ofSeconds(10))
+                .filter(throwable -> !(throwable instanceof java.util.concurrent.CancellationException)))
             .doOnSubscribe(subscription ->
                 logger.info("Started SSE stream for user: {}", userId))
             .doOnCancel(() ->
@@ -50,8 +66,15 @@ public class ReactiveNotificationController {
                 logger.info("SSE stream terminated for user: {}", userId))
             .doOnError(error -> {
                 logger.error("Error in SSE stream for user {}: {}", userId, error.getMessage());
-//                return Flux.empty();
-            });
+            })
+            .onErrorResume(error -> {
+                logger.warn("Recovering from SSE stream error for user {}: {}", userId, error.getMessage());
+                return Flux.just(ServerSentEvent.<MessageNotification>builder()
+                    .id(String.valueOf(System.currentTimeMillis()))
+                    .event("error")
+                    .comment("Stream error occurred, client should reconnect")
+                    .build());
+            }).mergeWith(heartBeat);
     }
 
     /**
@@ -73,11 +96,58 @@ public class ReactiveNotificationController {
      */
     @GetMapping("/health")
     public ResponseEntity<Map<String, Object>> healthCheck() {
-        Map<String, Object> health = Map.of(
-                "status", "UP",
-                "service", "ReactiveNotificationController",
+        try {
+            // Check Redis connectivity and other dependencies
+            Map<String, Object> stats = messageNotificationConsumer.getConnectionStats();
+
+            Map<String, Object> health = Map.of(
+                    "status", "UP",
+                    "service", "ReactiveNotificationController",
+                    "timestamp", System.currentTimeMillis(),
+                    "environment", "GKE",
+                    "activeConnections", stats.getOrDefault("activeConnections", 0),
+                    "redisConnected", stats.containsKey("redisHost")
+            );
+            return ResponseEntity.ok(health);
+        } catch (Exception e) {
+            logger.error("Health check failed: {}", e.getMessage());
+            Map<String, Object> health = Map.of(
+                    "status", "DOWN",
+                    "service", "ReactiveNotificationController",
+                    "timestamp", System.currentTimeMillis(),
+                    "error", e.getMessage()
+            );
+            return ResponseEntity.status(503).body(health);
+        }
+    }
+
+    /**
+     * Readiness probe endpoint for Kubernetes
+     */
+    @GetMapping("/ready")
+    public ResponseEntity<Map<String, Object>> readinessCheck() {
+        try {
+            // Verify service dependencies are ready
+            Map<String, Object> stats = messageNotificationConsumer.getConnectionStats();
+            boolean isReady = stats.containsKey("redisHost");
+
+            if (isReady) {
+                return ResponseEntity.ok(Map.of(
+                    "status", "READY",
+                    "timestamp", System.currentTimeMillis()
+                ));
+            } else {
+                return ResponseEntity.status(503).body(Map.of(
+                    "status", "NOT_READY",
+                    "timestamp", System.currentTimeMillis()
+                ));
+            }
+        } catch (Exception e) {
+            return ResponseEntity.status(503).body(Map.of(
+                "status", "NOT_READY",
+                "error", e.getMessage(),
                 "timestamp", System.currentTimeMillis()
-        );
-        return ResponseEntity.ok(health);
+            ));
+        }
     }
 }

@@ -18,9 +18,9 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
 @Service
-public class MessageConsumer {
+public class MessageSubscriberService {
 
-    private static final Logger logger = LoggerFactory.getLogger(MessageConsumer.class);
+    private static final Logger logger = LoggerFactory.getLogger(MessageSubscriberService.class);
 
     @Autowired
     private RedisMessageListenerContainer redisMessageListenerContainer;
@@ -32,7 +32,7 @@ public class MessageConsumer {
     private final ConcurrentHashMap<String, Consumer<Message>> messageHandlers;
     private final AtomicLong processedMessageCount = new AtomicLong(0);
 
-    public MessageConsumer() {
+    public MessageSubscriberService() {
         this.objectMapper = new ObjectMapper();
         this.objectMapper.registerModule(new JavaTimeModule());
         this.messageHandlers = new ConcurrentHashMap<>();
@@ -40,55 +40,14 @@ public class MessageConsumer {
 
     @PostConstruct
     public void initialize() {
-        logger.info("Initializing MessageConsumer and subscribing to default topics");
+        logger.info("Initializing MessageSubscriberService and subscribing to default topics - {}, {}",
+                    MessagePublisher.USER_MESSAGES_TOPIC, MessagePublisher.BROADCAST_MESSAGES_TOPIC);
 
         // Subscribe to default topics
-        subscribeToUserMessages();
-        subscribeToBroadcastMessages();
-
-        logger.info("MessageConsumer initialized successfully");
-    }
-
-    /**
-     * Subscribes to the general user messages topic
-     */
-    public void subscribeToUserMessages() {
         subscribeToTopic(MessagePublisher.USER_MESSAGES_TOPIC, this.messageNotificationConsumer);
-    }
+        subscribeToTopic(MessagePublisher.BROADCAST_MESSAGES_TOPIC, this::handleBroadcastMessage);
 
-    /**
-     * Subscribes to broadcast messages topic
-     */
-    public void subscribeToBroadcastMessages() {
-        subscribeToTopic("broadcast:messages", this::handleBroadcastMessage);
-    }
-
-    /**
-     * Subscribes to user-specific messages topic
-     * @param userId The user ID to subscribe to
-     */
-    public void subscribeToUserSpecificMessages(Long userId) {
-        if (userId == null) {
-            logger.warn("Cannot subscribe to user-specific messages: userId is null");
-            return;
-        }
-
-        String userTopic = "user:" + userId + ":messages";
-        subscribeToTopic(userTopic, message -> handleUserSpecificMessage(userId, message));
-    }
-
-    /**
-     * Subscribes to severity-based messages
-     * @param severity The severity level (e.g., "error", "warning", "info")
-     */
-    public void subscribeToSeverityMessages(String severity) {
-        if (severity == null || severity.trim().isEmpty()) {
-            logger.warn("Cannot subscribe to severity messages: severity is null or empty");
-            return;
-        }
-
-        String severityTopic = "messages:severity:" + severity.toLowerCase();
-        subscribeToTopic(severityTopic, message -> handleSeverityMessage(severity, message));
+        logger.info("MessageSubscriberService initialized successfully");
     }
 
     /**
@@ -171,20 +130,6 @@ public class MessageConsumer {
     }
 
     /**
-     * Handles general user messages
-     * @param message The received message
-     */
-    private void handleUserMessage(Message message) {
-        logger.info("Processing user message - ID: {}, Type: {}, User: {}, Severity: {}",
-                   message.getId(), message.getType(), message.getUserId(), message.getSeverity());
-
-        // Add your custom business logic here
-        // For example: save to database, send notifications, etc.
-
-        logMessageDetails("USER_MESSAGE", message);
-    }
-
-    /**
      * Handles broadcast messages
      * @param message The received message
      */
@@ -196,84 +141,6 @@ public class MessageConsumer {
         // For example: notify all connected clients, update global state, etc.
 
         logMessageDetails("BROADCAST_MESSAGE", message);
-    }
-
-    /**
-     * Handles user-specific messages
-     * @param userId The user ID
-     * @param message The received message
-     */
-    private void handleUserSpecificMessage(Long userId, Message message) {
-        logger.info("Processing user-specific message for user {} - ID: {}, Type: {}",
-                   userId, message.getId(), message.getType());
-
-        // Add your custom business logic here
-        // For example: send push notification to specific user, update user preferences, etc.
-
-        logMessageDetails("USER_SPECIFIC_MESSAGE", message);
-    }
-
-    /**
-     * Handles severity-based messages
-     * @param severity The severity level
-     * @param message The received message
-     */
-    private void handleSeverityMessage(String severity, Message message) {
-        logger.info("Processing {} severity message - ID: {}, Type: {}, Message: {}",
-                   severity.toUpperCase(), message.getId(), message.getType(), message.getMessage());
-
-        // Add your custom business logic here
-        // For example: alert administrators for error messages, log warnings, etc.
-
-        switch (severity.toLowerCase()) {
-            case "error":
-                handleErrorMessage(message);
-                break;
-            case "warning":
-                handleWarningMessage(message);
-                break;
-            case "info":
-                handleInfoMessage(message);
-                break;
-            default:
-                logger.debug("Processing message with unknown severity: {}", severity);
-        }
-
-        logMessageDetails("SEVERITY_MESSAGE_" + severity.toUpperCase(), message);
-    }
-
-    /**
-     * Handles error severity messages
-     * @param message The error message
-     */
-    private void handleErrorMessage(Message message) {
-        logger.error("ERROR MESSAGE RECEIVED - ID: {}, Source: {}, Message: {}",
-                    message.getId(), message.getSource(), message.getMessage());
-
-        // Add error-specific handling here
-        // For example: send alerts, create tickets, etc.
-    }
-
-    /**
-     * Handles warning severity messages
-     * @param message The warning message
-     */
-    private void handleWarningMessage(Message message) {
-        logger.warn("WARNING MESSAGE RECEIVED - ID: {}, Source: {}, Message: {}",
-                   message.getId(), message.getSource(), message.getMessage());
-
-        // Add warning-specific handling here
-    }
-
-    /**
-     * Handles info severity messages
-     * @param message The info message
-     */
-    private void handleInfoMessage(Message message) {
-        logger.info("INFO MESSAGE RECEIVED - ID: {}, Source: {}, Message: {}",
-                   message.getId(), message.getSource(), message.getMessage());
-
-        // Add info-specific handling here
     }
 
     /**

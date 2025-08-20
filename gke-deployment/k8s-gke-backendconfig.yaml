@@ -1,0 +1,28 @@
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: reactive-sse-backendconfig
+  namespace: default
+spec:
+  timeoutSec: 3600  # 1 hour timeout for SSE connections
+  connectionDraining:
+    drainingTimeoutSec: 300  # 5 minutes for graceful connection draining
+  healthCheck:
+    checkIntervalSec: 10
+    port: 8080
+    type: HTTP
+    requestPath: /actuator/health
+    timeoutSec: 5
+    unhealthyThreshold: 3
+    healthyThreshold: 1
+  sessionAffinity:
+    affinityType: "CLIENT_IP"
+  # Enable streaming support
+  customRequestHeaders:
+    headers:
+    - "Cache-Control:no-cache"
+  # Disable buffering for real-time streaming
+  logging:
+    enable: true
+    sampleRate: 1.0
+

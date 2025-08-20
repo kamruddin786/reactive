@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+    <!-- Local development profile -->
+    <springProfile name="!k8s">
+        <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder>
+                <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [%X{traceId:-},%X{spanId:-}] %logger{36} - %msg%n</pattern>
+            </encoder>
+        </appender>
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
+
+    <!-- GKE/Kubernetes profile -->
+    <springProfile name="k8s">
+        <appender name="JSON_CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder class="net.logstash.logback.encoder.LoggingEventCompositeJsonEncoder">
+                <providers>
+                    <timestamp>
+                        <fieldName>timestamp</fieldName>
+                        <timeZone>UTC</timeZone>
+                    </timestamp>
+                    <logLevel>
+                        <fieldName>severity</fieldName>
+                    </logLevel>
+                    <loggerName>
+                        <fieldName>logger</fieldName>
+                    </loggerName>
+                    <message>
+                        <fieldName>message</fieldName>
+                    </message>
+                    <mdc>
+                        <fieldName>mdc</fieldName>
+                    </mdc>
+                    <arguments>
+                        <fieldName>arguments</fieldName>
+                    </arguments>
+                    <stackTrace>
+                        <fieldName>stackTrace</fieldName>
+                    </stackTrace>
+                    <pattern>
+                        <pattern>
+                            {
+                                "service": "reactive-sse-app",
+                                "environment": "gke",
+                                "pod": "${HOSTNAME:-unknown}",
+                                "version": "v1",
+                                "traceId": "%X{traceId:-}",
+                                "spanId": "%X{spanId:-}",
+                                "thread": "%thread"
+                            }
+                        </pattern>
+                    </pattern>
+                </providers>
+            </encoder>
+        </appender>
+
+        <!-- Separate appender for SSE connection tracking -->
+        <appender name="SSE_CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder class="net.logstash.logback.encoder.LoggingEventCompositeJsonEncoder">
+                <providers>
+                    <timestamp>
+                        <fieldName>timestamp</fieldName>
+                        <timeZone>UTC</timeZone>
+                    </timestamp>
+                    <logLevel>
+                        <fieldName>severity</fieldName>
+                    </logLevel>
+                    <message>
+                        <fieldName>message</fieldName>
+                    </message>
+                    <pattern>
+                        <pattern>
+                            {
+                                "service": "reactive-sse-app",
+                                "component": "sse-stream",
+                                "environment": "gke",
+                                "pod": "${HOSTNAME:-unknown}",
+                                "traceId": "%X{traceId:-}",
+                                "spanId": "%X{spanId:-}",
+                                "userId": "%X{userId:-}",
+                                "connectionId": "%X{connectionId:-}"
+                            }
+                        </pattern>
+                    </pattern>
+                </providers>
+            </encoder>
+        </appender>
+
+        <!-- Root logger -->
+        <root level="INFO">
+            <appender-ref ref="JSON_CONSOLE"/>
+        </root>
+
+        <!-- SSE specific logger -->
+        <logger name="com.kamruddin.reactive.controllers.ReactiveNotificationController" level="INFO" additivity="false">
+            <appender-ref ref="SSE_CONSOLE"/>
+        </logger>
+
+        <!-- Redis connection logging -->
+        <logger name="io.lettuce" level="WARN"/>
+        <logger name="reactor.netty" level="WARN"/>
+    </springProfile>
+</configuration>

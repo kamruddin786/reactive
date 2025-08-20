@@ -11,6 +11,16 @@ public class MessageNotification {
     private String notificationTime;
     private String podId;
 
+    public MessageNotification() {
+    }
+
+    public MessageNotification(Long id, String type, String message, String notificationTime) {
+        this.id = id;
+        this.type = type;
+        this.message = message;
+        this.notificationTime = notificationTime;
+    }
+
     // Getters and setters
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }

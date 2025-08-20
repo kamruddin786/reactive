@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: reactive-sse-app
+  labels:
+    app: reactive-sse-app
+    version: v1
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: reactive-sse-app
+  template:
+    metadata:
+      labels:
+        app: reactive-sse-app
+        version: v1
+    spec:
+      containers:
+      - name: reactive-sse-app
+        image: us-central1-docker.pkg.dev/rfx-eng-tm-poc-d/poc-images/reactive-sse-app:v1
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: SPRING_PROFILES_ACTIVE
+          value: "k8s"
+        - name: REDIS_HOST
+          value: "10.219.141.251"
+        - name: REDIS_PORT
+          value: "6379"
+        - name: REDIS_POOL_MAX_ACTIVE
+          value: "8"
+        - name: REDIS_POOL_MAX_IDLE
+          value: "8"
+        - name: REDIS_POOL_MIN_IDLE
+          value: "0"
+        - name: REDIS_POOL_MAX_WAIT
+          value: "-1ms"
+        - name: JAVA_OPTS
+          value: "-XX:+UseG1GC -XX:MaxGCPauseMillis=200 -Xms1g -Xmx1g -XX:+UseStringDeduplication"
+        - name: MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE
+          value: "health,info,metrics"
+        - name: MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS
+          value: "always"
+        - name: SERVER_TOMCAT_KEEP_ALIVE_TIMEOUT
+          value: "60000"
+        - name: SERVER_TOMCAT_MAX_KEEP_ALIVE_REQUESTS
+          value: "1000"
+        - name: SERVER_TOMCAT_CONNECTION_TIMEOUT
+          value: "60000"
+        livenessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8080
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      restartPolicy: Always
+
