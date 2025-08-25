@@ -10,12 +10,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 import reactor.util.retry.Retry;
 
 import java.time.Duration;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.Map;
 
 @RestController
@@ -43,15 +40,6 @@ public class ReactiveNotificationController {
             @PathVariable Long userId) {
 
         logger.info("Client connecting to reactive SSE stream for user: {}", userId);
-//        Long id, String type, String message, String notificationTime
-        Flux<ServerSentEvent<MessageNotification>> heartBeat = Flux.interval(Duration.ofSeconds(15))
-                .map(tick -> ServerSentEvent.<MessageNotification>builder()
-                        .id(String.valueOf(System.currentTimeMillis()))
-                        .event("heartbeat")
-                        .comment("ping")
-                        .data(new MessageNotification(100L, "heartbeat", "ping to keep connection alive",
-                                LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)))
-                        .build());
 
         return messageNotificationConsumer.createUserStream(userId)
             .timeout(Duration.ofHours(1))
@@ -74,7 +62,7 @@ public class ReactiveNotificationController {
                     .event("error")
                     .comment("Stream error occurred, client should reconnect")
                     .build());
-            }).mergeWith(heartBeat);
+            });
     }
 
     /**
@@ -96,6 +84,7 @@ public class ReactiveNotificationController {
      */
     @GetMapping("/health")
     public ResponseEntity<Map<String, Object>> healthCheck() {
+        String podId = System.getenv("HOSTNAME") != null ? System.getenv("HOSTNAME") : "localhost";
         try {
             // Check Redis connectivity and other dependencies
             Map<String, Object> stats = messageNotificationConsumer.getConnectionStats();
@@ -105,49 +94,20 @@ public class ReactiveNotificationController {
                     "service", "ReactiveNotificationController",
                     "timestamp", System.currentTimeMillis(),
                     "environment", "GKE",
-                    "activeConnections", stats.getOrDefault("activeConnections", 0),
-                    "redisConnected", stats.containsKey("redisHost")
+                    "activeConnections", stats.getOrDefault("activeStreams", 0),
+                    "podId", podId
             );
             return ResponseEntity.ok(health);
         } catch (Exception e) {
             logger.error("Health check failed: {}", e.getMessage());
             Map<String, Object> health = Map.of(
+                    "podId", podId,
                     "status", "DOWN",
                     "service", "ReactiveNotificationController",
                     "timestamp", System.currentTimeMillis(),
                     "error", e.getMessage()
             );
             return ResponseEntity.status(503).body(health);
-        }
-    }
-
-    /**
-     * Readiness probe endpoint for Kubernetes
-     */
-    @GetMapping("/ready")
-    public ResponseEntity<Map<String, Object>> readinessCheck() {
-        try {
-            // Verify service dependencies are ready
-            Map<String, Object> stats = messageNotificationConsumer.getConnectionStats();
-            boolean isReady = stats.containsKey("redisHost");
-
-            if (isReady) {
-                return ResponseEntity.ok(Map.of(
-                    "status", "READY",
-                    "timestamp", System.currentTimeMillis()
-                ));
-            } else {
-                return ResponseEntity.status(503).body(Map.of(
-                    "status", "NOT_READY",
-                    "timestamp", System.currentTimeMillis()
-                ));
-            }
-        } catch (Exception e) {
-            return ResponseEntity.status(503).body(Map.of(
-                "status", "NOT_READY",
-                "error", e.getMessage(),
-                "timestamp", System.currentTimeMillis()
-            ));
         }
     }
 }

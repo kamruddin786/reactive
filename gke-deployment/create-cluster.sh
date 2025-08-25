@@ -1,11 +1,11 @@
 gcloud beta container --project "rfx-eng-tm-poc-d" clusters create "notification-cluster" \
 --zone "us-central1-a" --tier "standard" \
 --no-enable-basic-auth --cluster-version "1.33.2-gke.1240000" \
---release-channel "regular" --machine-type "e2-custom-4-4096" \
+--release-channel "regular" --machine-type "e2-custom-2-3072" \
 --image-type "COS_CONTAINERD" --disk-type "pd-balanced" \
 --disk-size "40" --metadata disable-legacy-endpoints=true \
 --service-account "notification-svc@rfx-eng-tm-poc-d.iam.gserviceaccount.com" \
---max-pods-per-node "110" --sandbox type=gvisor --num-nodes "2" \
+--max-pods-per-node "110" --num-nodes "2" \
 --logging=SYSTEM,WORKLOAD --monitoring=SYSTEM,STORAGE,POD,DEPLOYMENT,STATEFULSET,DAEMONSET,HPA,JOBSET,CADVISOR,KUBELET,DCGM \
 --enable-ip-alias --network "projects/rfx-eng-tm-poc-d/global/networks/saas-net-0" \
 --subnetwork "projects/rfx-eng-tm-poc-d/regions/us-central1/subnetworks/saas-subnet-us-central" \

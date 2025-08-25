@@ -6,14 +6,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Service;
+import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Sinks;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
 @Service
@@ -23,8 +24,8 @@ public class MessageNotificationConsumer implements Consumer<Message> {
 
     // Map to store user-specific Flux sinks
     private final Map<Long, Sinks.Many<ServerSentEvent<MessageNotification>>> userSinks = new ConcurrentHashMap<>();
-    // Track termination state to prevent duplicate logs
-    private final Map<Long, AtomicBoolean> userTerminationState = new ConcurrentHashMap<>();
+    // Per-user heartbeat task that is disposed on client disconnect
+    private final Map<Long, Disposable> heartbeatTasks = new ConcurrentHashMap<>();
 
     @Override
     public void accept(Message message) {
@@ -43,7 +44,7 @@ public class MessageNotificationConsumer implements Consumer<Message> {
         logger.info("Creating SSE stream for user: {}", userId);
 
         // Reset termination state for this user
-        userTerminationState.put(userId, new AtomicBoolean(false));
+//        userTerminationState.put(userId, new AtomicBoolean(false));
 
         // Create or get existing sink for this user
         Sinks.Many<ServerSentEvent<MessageNotification>> sink = userSinks.computeIfAbsent(userId,
@@ -54,29 +55,87 @@ public class MessageNotificationConsumer implements Consumer<Message> {
                     logger.info("User {} subscribed to notification stream", userId);
                     // Send initial connection event
                     sendConnectionEvent(userId);
+                    startHeartbeat(userId);
                 })
                 .doOnCancel(() -> {
-                    AtomicBoolean terminated = userTerminationState.get(userId);
-                    if (terminated != null && terminated.compareAndSet(false, true)) {
-                        logger.info("User {} cancelled notification stream", userId);
-                        cleanupUserSink(userId);
-                    }
-                })
-                .doOnTerminate(() -> {
-                    AtomicBoolean terminated = userTerminationState.get(userId);
-                    if (terminated != null && terminated.compareAndSet(false, true)) {
-                        logger.info("User {} notification stream terminated", userId);
-                        cleanupUserSink(userId);
-                    }
+                    logger.warn("Client disconnected for user {}. Stream cancelled.", userId);
+                    // Explicitly trigger cleanup on cancellation
+                    stopHeartbeat(userId);
+                    cleanupUserSink(userId);
                 })
                 .doFinally(signalType -> {
-                    // Clean up termination state when stream is completely done
-                    userTerminationState.remove(userId);
+                    logger.info("Stream for user {} terminated with signal: {}. Cleaning up.", userId, signalType);
+                    stopHeartbeat(userId);
+                    Sinks.Many<ServerSentEvent<MessageNotification>> current = userSinks.get(userId);
+                    if (current == null || current.currentSubscriberCount() == 0) {
+                        cleanupUserSink(userId);
+                    } else {
+                        logger.debug("User {} still has {} subscriber(s); not cleaning sink.",
+                                userId, current.currentSubscriberCount());
+                    }
                 })
                 .onErrorResume(error -> {
                     logger.error("Error in user {} stream: {}", userId, error.getMessage());
                     return Flux.empty();
                 });
+    }
+
+    private void startHeartbeat(Long userId) {
+        // Avoid duplicate tasks per user
+        if (heartbeatTasks.containsKey(userId)) {
+            return;
+        }
+
+        Sinks.Many<ServerSentEvent<MessageNotification>> sink = userSinks.get(userId);
+        if (sink == null) return;
+
+        Disposable task = Flux.interval(Duration.ofSeconds(30))
+                .subscribe(tick -> {
+                    Sinks.Many<ServerSentEvent<MessageNotification>> currentSink = userSinks.get(userId);
+                    if (currentSink == null) {
+                        stopHeartbeat(userId);
+                        return;
+                    }
+
+                    boolean isTerminated = Boolean.TRUE.equals(currentSink.scan(reactor.core.Scannable.Attr.TERMINATED));
+                    boolean hasSubscribers = currentSink.currentSubscriberCount() > 0;
+
+                    if (isTerminated || !hasSubscribers) {
+                        logger.debug("Stopping heartbeat for user {} - terminated: {}, subscribers: {}",
+                                userId, isTerminated, hasSubscribers);
+                        stopHeartbeat(userId);
+                        return;
+                    }
+
+                    ServerSentEvent<MessageNotification> event = ServerSentEvent.<MessageNotification>builder()
+                            .event("heartbeat")
+                            .id(String.valueOf(System.currentTimeMillis()))
+                            .data(createHeartbeatNotification(userId))
+                            .build();
+
+                    Sinks.EmitResult result = currentSink.tryEmitNext(event);
+                    if (result.isFailure()) {
+                        logger.debug("Heartbeat emit failed for user {}: {}", userId, result);
+                        if (result == Sinks.EmitResult.FAIL_TERMINATED || result == Sinks.EmitResult.FAIL_NON_SERIALIZED) {
+                            stopHeartbeat(userId);
+                        }
+                    } else {
+                        logger.debug("Sending heartbeat to user: {}", userId);
+                    }
+                }, error -> {
+                    logger.warn("Heartbeat failed for user {}: {}", userId, error.getMessage());
+                    stopHeartbeat(userId);
+                });
+
+        heartbeatTasks.put(userId, task);
+    }
+
+    private void stopHeartbeat(Long userId) {
+        Disposable task = heartbeatTasks.remove(userId);
+        if (task != null && !task.isDisposed()) {
+            task.dispose();
+            logger.debug("Heartbeat task disposed for user: {}", userId);
+        }
     }
 
     /**
@@ -96,6 +155,7 @@ public class MessageNotificationConsumer implements Consumer<Message> {
             connectionNotification.setSeverity("INFO"); // Set appropriate severity
             connectionNotification.setSource("SSE_CONNECTION"); // Set source identifier
             connectionNotification.setNotificationTime(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)); // Set notification time
+            connectionNotification.setPodId(getHostname());
 
             ServerSentEvent<MessageNotification> event = ServerSentEvent.<MessageNotification>builder()
                     .event("connection-established")
@@ -145,7 +205,7 @@ public class MessageNotificationConsumer implements Consumer<Message> {
                 }
             }
         } else {
-            logger.debug("No active stream for user {}, notification not sent", userId);
+            logger.debug("No active stream for user {}, notification not sent, MessageId - {}", userId, notification.getId());
         }
     }
 
@@ -197,5 +257,18 @@ public class MessageNotificationConsumer implements Consumer<Message> {
                         e -> e.getValue().currentSubscriberCount() > 0
                 )));
         return stats;
+    }
+    private MessageNotification createHeartbeatNotification(Long userId) {
+        MessageNotification heartbeat = new MessageNotification();
+        heartbeat.setId(System.currentTimeMillis());
+        heartbeat.setType("heartbeat");
+        heartbeat.setMessage("ping");
+        heartbeat.setUserId(userId);
+        heartbeat.setTimestamp(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+        heartbeat.setSeverity("INFO");
+        heartbeat.setSource("HEARTBEAT");
+        heartbeat.setNotificationTime(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+        heartbeat.setPodId(getHostname());
+        return heartbeat;
     }
 }

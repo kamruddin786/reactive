@@ -16,11 +16,14 @@ spec:
     unhealthyThreshold: 3
     healthyThreshold: 1
   sessionAffinity:
-    affinityType: "CLIENT_IP"
+    affinityType: "NONE"
+#    affinityType: "GENERATED_COOKIE"
+#    affinityCookieTtlSec: 3600
+#    affinityType: "CLIENT_IP"
   # Enable streaming support
   customRequestHeaders:
     headers:
-    - "Cache-Control:no-cache"
+    - "Cache-Control:no-cache, no-transform"
   # Disable buffering for real-time streaming
   logging:
     enable: true

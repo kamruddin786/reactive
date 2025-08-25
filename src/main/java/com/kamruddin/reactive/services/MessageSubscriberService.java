@@ -30,18 +30,21 @@ public class MessageSubscriberService {
 
     private final ObjectMapper objectMapper;
     private final ConcurrentHashMap<String, Consumer<Message>> messageHandlers;
+    // Map to store the actual listener instances for proper removal
+    private final ConcurrentHashMap<String, MessageListener> activeListeners;
     private final AtomicLong processedMessageCount = new AtomicLong(0);
 
     public MessageSubscriberService() {
         this.objectMapper = new ObjectMapper();
         this.objectMapper.registerModule(new JavaTimeModule());
         this.messageHandlers = new ConcurrentHashMap<>();
+        this.activeListeners = new ConcurrentHashMap<>();
     }
 
     @PostConstruct
     public void initialize() {
         logger.info("Initializing MessageSubscriberService and subscribing to default topics - {}, {}",
-                    MessagePublisher.USER_MESSAGES_TOPIC, MessagePublisher.BROADCAST_MESSAGES_TOPIC);
+                MessagePublisher.USER_MESSAGES_TOPIC, MessagePublisher.BROADCAST_MESSAGES_TOPIC);
 
         // Subscribe to default topics
         subscribeToTopic(MessagePublisher.USER_MESSAGES_TOPIC, this.messageNotificationConsumer);
@@ -55,7 +58,7 @@ public class MessageSubscriberService {
      * @param topic The topic to subscribe to
      * @param messageHandler The handler function to process messages
      */
-    public void subscribeToTopic(String topic, Consumer<Message> messageHandler) {
+    private void subscribeToTopic(String topic, Consumer<Message> messageHandler) {
         if (topic == null || topic.trim().isEmpty()) {
             logger.warn("Cannot subscribe to topic: topic is null or empty");
             return;
@@ -63,6 +66,12 @@ public class MessageSubscriberService {
 
         if (messageHandler == null) {
             logger.warn("Cannot subscribe to topic {}: messageHandler is null", topic);
+            return;
+        }
+
+        // Prevent duplicate subscriptions
+        if (activeListeners.containsKey(topic)) {
+            logger.warn("Already subscribed to topic: {}. Ignoring request.", topic);
             return;
         }
 
@@ -95,8 +104,9 @@ public class MessageSubscriberService {
                 }
             };
 
-            // Add the listener to the container
+            // Add the listener to the container and store it for future removal
             redisMessageListenerContainer.addMessageListener(listener, new ChannelTopic(topic));
+            activeListeners.put(topic, listener);
 
             logger.info("Successfully subscribed to topic: {}", topic);
 
@@ -115,17 +125,20 @@ public class MessageSubscriberService {
             return;
         }
 
-        try {
-            // Remove the handler
-            messageHandlers.remove(topic);
-
-            // Remove all listeners for this topic
-            redisMessageListenerContainer.removeMessageListener(null, new ChannelTopic(topic));
-
-            logger.info("Successfully unsubscribed from topic: {}", topic);
-
-        } catch (Exception e) {
-            logger.error("Failed to unsubscribe from topic {}: {}", topic, e.getMessage(), e);
+        MessageListener listener = activeListeners.remove(topic);
+        if (listener != null) {
+            try {
+                // Remove the specific listener instance
+                redisMessageListenerContainer.removeMessageListener(listener, new ChannelTopic(topic));
+                messageHandlers.remove(topic);
+                logger.info("Successfully unsubscribed from topic: {}", topic);
+            } catch (Exception e) {
+                logger.error("Failed to unsubscribe from topic {}: {}", topic, e.getMessage(), e);
+                // Put the listener back if removal failed to maintain a consistent state
+                activeListeners.put(topic, listener);
+            }
+        } else {
+            logger.warn("Not subscribed to topic: {}", topic);
         }
     }
 
@@ -135,7 +148,7 @@ public class MessageSubscriberService {
      */
     private void handleBroadcastMessage(Message message) {
         logger.info("Processing broadcast message - ID: {}, Type: {}, Message: {}",
-                   message.getId(), message.getType(), message.getMessage());
+                message.getId(), message.getType(), message.getMessage());
 
         // Add your custom business logic here
         // For example: notify all connected clients, update global state, etc.
@@ -150,10 +163,10 @@ public class MessageSubscriberService {
      */
     private void logMessageDetails(String messageType, Message message) {
         logger.debug("{} - Full Details: ID={}, Type={}, Message='{}', Timestamp={}, " +
-                    "Severity={}, Source={}, UserId={}",
-                    messageType, message.getId(), message.getType(), message.getMessage(),
-                    message.getTimestamp(), message.getSeverity(), message.getSource(),
-                    message.getUserId());
+                        "Severity={}, Source={}, UserId={}",
+                messageType, message.getId(), message.getType(), message.getMessage(),
+                message.getTimestamp(), message.getSeverity(), message.getSource(),
+                message.getUserId());
     }
 
     /**
@@ -169,7 +182,7 @@ public class MessageSubscriberService {
      * @return Set of subscribed topic names
      */
     public java.util.Set<String> getSubscribedTopics() {
-        return messageHandlers.keySet();
+        return activeListeners.keySet();
     }
 
     /**
@@ -178,7 +191,7 @@ public class MessageSubscriberService {
      * @return true if subscribed, false otherwise
      */
     public boolean isSubscribedToTopic(String topic) {
-        return messageHandlers.containsKey(topic);
+        return activeListeners.containsKey(topic);
     }
 
     /**
@@ -193,10 +206,11 @@ public class MessageSubscriberService {
     public void cleanup() {
         logger.info("Cleaning up MessageConsumer - unsubscribing from all topics");
 
-        messageHandlers.keySet().forEach(this::unsubscribeFromTopic);
+        activeListeners.keySet().forEach(this::unsubscribeFromTopic);
+        activeListeners.clear();
         messageHandlers.clear();
 
         logger.info("MessageConsumer cleanup completed. Total messages processed: {}",
-                   processedMessageCount.get());
+                processedMessageCount.get());
     }
 }

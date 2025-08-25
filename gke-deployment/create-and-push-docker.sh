@@ -1,4 +1,4 @@
-image_name="us-central1-docker.pkg.dev/rfx-eng-tm-poc-d/poc-images/reactive-sse-app:v1"
+image_name="us-central1-docker.pkg.dev/rfx-eng-tm-poc-d/poc-images/reactive-sse-app:v2.1.5"
 
 docker rmi $image_name 2>/dev/null || echo "Image not found, continuing..."
 

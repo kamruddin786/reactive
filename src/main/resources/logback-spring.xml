@@ -4,9 +4,10 @@
 
     <!-- Local development profile -->
     <springProfile name="!k8s">
+        <!-- Simple console logging for local development -->
         <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
             <encoder>
-                <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [%X{traceId:-},%X{spanId:-}] %logger{36} - %msg%n</pattern>
+                <pattern>%d{yyyy-MM-dd HH:mm:ss} - %msg%n</pattern>
             </encoder>
         </appender>
         <root level="INFO">
@@ -16,92 +17,90 @@
 
     <!-- GKE/Kubernetes profile -->
     <springProfile name="k8s">
-        <appender name="JSON_CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <!-- JSON structured logging for GCP Cloud Logging -->
+        <appender name="STDOUT_JSON" class="ch.qos.logback.core.ConsoleAppender">
+            <target>System.out</target>
             <encoder class="net.logstash.logback.encoder.LoggingEventCompositeJsonEncoder">
                 <providers>
                     <timestamp>
                         <fieldName>timestamp</fieldName>
                         <timeZone>UTC</timeZone>
                     </timestamp>
+                    <!-- Map logback level to GCP severity -->
                     <logLevel>
                         <fieldName>severity</fieldName>
                     </logLevel>
                     <loggerName>
                         <fieldName>logger</fieldName>
                     </loggerName>
+                    <threadName>
+                        <fieldName>thread</fieldName>
+                    </threadName>
                     <message>
                         <fieldName>message</fieldName>
                     </message>
-                    <mdc>
-                        <fieldName>mdc</fieldName>
-                    </mdc>
-                    <arguments>
-                        <fieldName>arguments</fieldName>
-                    </arguments>
                     <stackTrace>
-                        <fieldName>stackTrace</fieldName>
+                        <fieldName>stack_trace</fieldName>
                     </stackTrace>
-                    <pattern>
-                        <pattern>
+                    <mdc/> <!-- Includes traceId, spanId, etc. -->
+                    <!-- Add custom fields that are automatically parsed by GCP -->
+                    <globalCustomFields>
+                        <customFields>
                             {
-                                "service": "reactive-sse-app",
-                                "environment": "gke",
-                                "pod": "${HOSTNAME:-unknown}",
-                                "version": "v1",
-                                "traceId": "%X{traceId:-}",
-                                "spanId": "%X{spanId:-}",
-                                "thread": "%thread"
+                                "serviceContext": {
+                                    "service": "reactive-sse-app",
+                                    "version": "v1.0"
+                                },
+                                "context": {
+                                    "pod": "${HOSTNAME:-unknown}",
+                                    "environment": "gke"
+                                }
                             }
-                        </pattern>
-                    </pattern>
+                        </customFields>
+                    </globalCustomFields>
                 </providers>
             </encoder>
         </appender>
 
-        <!-- Separate appender for SSE connection tracking -->
-        <appender name="SSE_CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
-            <encoder class="net.logstash.logback.encoder.LoggingEventCompositeJsonEncoder">
-                <providers>
-                    <timestamp>
-                        <fieldName>timestamp</fieldName>
-                        <timeZone>UTC</timeZone>
-                    </timestamp>
-                    <logLevel>
-                        <fieldName>severity</fieldName>
-                    </logLevel>
-                    <message>
-                        <fieldName>message</fieldName>
-                    </message>
-                    <pattern>
-                        <pattern>
-                            {
-                                "service": "reactive-sse-app",
-                                "component": "sse-stream",
-                                "environment": "gke",
-                                "pod": "${HOSTNAME:-unknown}",
-                                "traceId": "%X{traceId:-}",
-                                "spanId": "%X{spanId:-}",
-                                "userId": "%X{userId:-}",
-                                "connectionId": "%X{connectionId:-}"
-                            }
-                        </pattern>
-                    </pattern>
-                </providers>
+        <!-- Rolling file appender for /tmp directory -->
+        <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+            <file>/tmp/reactive-sse-app.log</file>
+            <rollingPolicy class="ch.qos.logback.core.rolling.FixedWindowRollingPolicy">
+                <fileNamePattern>/tmp/reactive-sse-app.%i.log</fileNamePattern>
+                <minIndex>1</minIndex>
+                <maxIndex>5</maxIndex>
+            </rollingPolicy>
+            <triggeringPolicy class="ch.qos.logback.core.rolling.SizeBasedTriggeringPolicy">
+                <maxFileSize>2MB</maxFileSize>
+            </triggeringPolicy>
+            <encoder>
+                <pattern>%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n</pattern>
             </encoder>
         </appender>
 
-        <!-- Root logger -->
         <root level="INFO">
-            <appender-ref ref="JSON_CONSOLE"/>
+            <appender-ref ref="STDOUT_JSON"/>
+            <appender-ref ref="FILE"/>
         </root>
 
-        <!-- SSE specific logger -->
-        <logger name="com.kamruddin.reactive.controllers.ReactiveNotificationController" level="INFO" additivity="false">
-            <appender-ref ref="SSE_CONSOLE"/>
+        <!-- Enhanced SSE logging -->
+        <logger name="com.kamruddin.reactive.controllers.ReactiveNotificationController" level="DEBUG" additivity="false">
+            <appender-ref ref="STDOUT_JSON"/>
+            <appender-ref ref="FILE"/>
+        </logger>
+        <logger name="com.kamruddin.reactive.services.MessageNotificationConsumer" level="DEBUG" additivity="false">
+            <appender-ref ref="STDOUT_JSON"/>
+            <appender-ref ref="FILE"/>
         </logger>
 
-        <!-- Redis connection logging -->
-        <logger name="io.lettuce" level="WARN"/>
-        <logger name="reactor.netty" level="WARN"/>
+        <!-- Network and connection logging -->
+        <logger name="reactor.netty" level="DEBUG" additivity="false">
+            <appender-ref ref="STDOUT_JSON"/>
+            <appender-ref ref="FILE"/>
+        </logger>
+        <logger name="org.springframework.web.reactive" level="DEBUG" additivity="false">
+            <appender-ref ref="STDOUT_JSON"/>
+            <appender-ref ref="FILE"/>
+        </logger>
     </springProfile>
 </configuration>

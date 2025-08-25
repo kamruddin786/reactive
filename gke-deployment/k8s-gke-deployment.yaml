@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
       - name: reactive-sse-app
-        image: us-central1-docker.pkg.dev/rfx-eng-tm-poc-d/poc-images/reactive-sse-app:v1
+        image: us-central1-docker.pkg.dev/rfx-eng-tm-poc-d/poc-images/reactive-sse-app:v2.1.5
         ports:
         - containerPort: 8080
           name: http
@@ -26,7 +26,7 @@ spec:
         - name: SPRING_PROFILES_ACTIVE
           value: "k8s"
         - name: REDIS_HOST
-          value: "10.219.141.251"
+          value: "10.212.116.107"
         - name: REDIS_PORT
           value: "6379"
         - name: REDIS_POOL_MAX_ACTIVE
@@ -38,7 +38,7 @@ spec:
         - name: REDIS_POOL_MAX_WAIT
           value: "-1ms"
         - name: JAVA_OPTS
-          value: "-XX:+UseG1GC -XX:MaxGCPauseMillis=200 -Xms1g -Xmx1g -XX:+UseStringDeduplication"
+          value: "-XX:+UseG1GC -XX:MaxGCPauseMillis=200 -Xms512m -Xmx1400m -XX:+UseStringDeduplication -XX:+UseContainerSupport"
         - name: MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE
           value: "health,info,metrics"
         - name: MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS
@@ -68,9 +68,9 @@ spec:
         resources:
           requests:
             memory: "512Mi"
-            cpu: "250m"
+            cpu: "100m"
           limits:
-            memory: "1Gi"
+            memory: "1.5Gi"
             cpu: "500m"
         volumeMounts:
         - name: tmp
