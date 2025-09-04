@@ -6,7 +6,7 @@ metadata:
     app: reactive-sse-local
     environment: local
 spec:
-  replicas: 2  # Start with 2 replicas for local testing
+  replicas: 2
   selector:
     matchLabels:
       app: reactive-sse-local
@@ -22,7 +22,6 @@ spec:
         imagePullPolicy: Never  # Use local image, don't pull from registry
         ports:
         - containerPort: 8080
-          name: http
         env:
         - name: SPRING_PROFILES_ACTIVE
           value: "k8s"
@@ -38,12 +37,28 @@ spec:
           value: "reactive_messages"
         - name: LOGGING_LEVEL_COM_KAMRUDDIN_REACTIVE
           value: "DEBUG"
+        - name: JAVA_OPTS
+          value: >
+            -XX:+UseG1GC -XX:MaxGCPauseMillis=200 
+            -Xms256m -Xmx1400m -XX:+UseStringDeduplication 
+            -XX:+UseContainerSupport
+            -Dcom.sun.management.jmxremote
+            -Dcom.sun.management.jmxremote.port=9696
+            -Dcom.sun.management.jmxremote.rmi.port=9696
+            -Dcom.sun.management.jmxremote.local.only=false
+            -Dcom.sun.management.jmxremote.authenticate=false
+            -Dcom.sun.management.jmxremote.ssl=false
+            -Djava.rmi.server.hostname=127.0.0.1
+        - name: SPRING_JMX_ENABLED
+          value: "true"
+        - name: MANAGEMENT_ENDPOINTS_JMX_EXPOSURE_INCLUDE
+          value: "*"
         resources:
           requests:
             memory: "512Mi"
             cpu: "200m"
           limits:
-            memory: "1Gi"
+            memory: "1.5Gi"
             cpu: "1000m"
         livenessProbe:
           httpGet:
@@ -69,6 +84,7 @@ metadata:
   labels:
     app: reactive-sse-local
 spec:
+  type: NodePort
   selector:
     app: reactive-sse-local
   ports:
@@ -76,7 +92,7 @@ spec:
     protocol: TCP
     port: 8080
     targetPort: 8080
-  type: ClusterIP
+    nodePort: 30080
 ---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler

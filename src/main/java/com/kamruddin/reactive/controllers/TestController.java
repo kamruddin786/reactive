@@ -27,13 +27,13 @@ public class TestController {
     public static final Logger logger = LoggerFactory.getLogger(TestController.class);
 //        public static final String BASE_URL = "http://reactive-sse.local";
 //    public static final String BASE_URL = "http://localhost:8080";
-    public static final String BASE_URL = "http://34.160.197.214";
+    public static final String BASE_URL = "http://34.36.40.216";
 
     // Connection timeout in minutes (configurable)
     private static final int CONNECTION_TIMEOUT_MINUTES = 60;
     private static final int RESPONSE_TIMEOUT_MINUTES = 5;
     private static final int BATCH_SIZE = 20; // Process connections in batches
-    private static final int BATCH_DELAY_MS = 50; // Delay between batches
+    private static final int BATCH_DELAY_MS = 100; // Delay between batches
 
     // Track active connections and their disposables
     private final Map<String, Disposable> activeConnections = new ConcurrentHashMap<>();
@@ -80,7 +80,7 @@ public class TestController {
         connectionsActive.set(true);
 
         // Create connections in batches to avoid overwhelming the connection pool
-        Flux.range(1500, 2000)
+        Flux.range(1500, 6000)
                 .buffer(BATCH_SIZE) // Process in batches of 100
                 .delayElements(Duration.ofMillis(BATCH_DELAY_MS)) // Small delay between batches
                 .flatMap(batch ->
@@ -161,7 +161,7 @@ public class TestController {
             return ResponseEntity.ok("No active connections found.");
         }
 
-        // Set flag to false to stop all connections
+        // Set flag to false, to stop all connections
         connectionsActive.set(false);
 
         // Dispose all active connections

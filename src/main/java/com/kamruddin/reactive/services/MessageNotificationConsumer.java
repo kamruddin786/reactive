@@ -47,32 +47,34 @@ public class MessageNotificationConsumer implements Consumer<Message> {
 //        userTerminationState.put(userId, new AtomicBoolean(false));
 
         // Create or get existing sink for this user
-        Sinks.Many<ServerSentEvent<MessageNotification>> sink = userSinks.computeIfAbsent(userId,
-                k -> Sinks.many().multicast().onBackpressureBuffer());
+        Sinks.Many<ServerSentEvent<MessageNotification>> sink = userSinks.computeIfAbsent(userId,k -> Sinks.many().multicast().onBackpressureBuffer());
+//        Sinks.Many<ServerSentEvent<MessageNotification>> sink = Sinks.many().unicast().onBackpressureBuffer();
+        // Current unicast sink will be replaced if user reconnects
+//        Sinks.Many<ServerSentEvent<MessageNotification>> old = userSinks.put(userId, sink);
+//        if (old != null) {
+//            old.tryEmitComplete();
+//        }
 
         return sink.asFlux()
+                .onBackpressureDrop(event -> {
+                    logger.warn("Dropping event for user {} due to backpressure: {}", userId, event);
+                })
                 .doOnSubscribe(subscription -> {
                     logger.info("User {} subscribed to notification stream", userId);
                     // Send initial connection event
-                    sendConnectionEvent(userId);
-                    startHeartbeat(userId);
+                    sendConnectionEvent(userId, sink);
+                    startHeartbeat(userId, sink);
                 })
                 .doOnCancel(() -> {
                     logger.warn("Client disconnected for user {}. Stream cancelled.", userId);
                     // Explicitly trigger cleanup on cancellation
                     stopHeartbeat(userId);
-                    cleanupUserSink(userId);
+                    cleanupUserSink(userId, sink);
                 })
                 .doFinally(signalType -> {
                     logger.info("Stream for user {} terminated with signal: {}. Cleaning up.", userId, signalType);
                     stopHeartbeat(userId);
-                    Sinks.Many<ServerSentEvent<MessageNotification>> current = userSinks.get(userId);
-                    if (current == null || current.currentSubscriberCount() == 0) {
-                        cleanupUserSink(userId);
-                    } else {
-                        logger.debug("User {} still has {} subscriber(s); not cleaning sink.",
-                                userId, current.currentSubscriberCount());
-                    }
+                    cleanupUserSink(userId, sink);
                 })
                 .onErrorResume(error -> {
                     logger.error("Error in user {} stream: {}", userId, error.getMessage());
@@ -80,19 +82,19 @@ public class MessageNotificationConsumer implements Consumer<Message> {
                 });
     }
 
-    private void startHeartbeat(Long userId) {
+    private void startHeartbeat(Long userId, Sinks.Many<ServerSentEvent<MessageNotification>> sinkRef) {
         // Avoid duplicate tasks per user
         if (heartbeatTasks.containsKey(userId)) {
             return;
         }
 
         Sinks.Many<ServerSentEvent<MessageNotification>> sink = userSinks.get(userId);
-        if (sink == null) return;
+        if (sink == null || sink != sinkRef) return;
 
         Disposable task = Flux.interval(Duration.ofSeconds(30))
                 .subscribe(tick -> {
                     Sinks.Many<ServerSentEvent<MessageNotification>> currentSink = userSinks.get(userId);
-                    if (currentSink == null) {
+                    if (currentSink == null || currentSink != sinkRef) {
                         stopHeartbeat(userId);
                         return;
                     }
@@ -141,8 +143,8 @@ public class MessageNotificationConsumer implements Consumer<Message> {
     /**
      * Send initial connection confirmation event
      */
-    private void sendConnectionEvent(Long userId) {
-        Sinks.Many<ServerSentEvent<MessageNotification>> sink = userSinks.get(userId);
+    private void sendConnectionEvent(Long userId, Sinks.Many<ServerSentEvent<MessageNotification>> sink) {
+//        Sinks.Many<ServerSentEvent<MessageNotification>> sink = userSinks.get(userId);
         if (sink != null) {
             MessageNotification connectionNotification = new MessageNotification();
 
@@ -170,12 +172,32 @@ public class MessageNotificationConsumer implements Consumer<Message> {
     /**
      * Cleanup user sink when stream ends
      */
-    private void cleanupUserSink(Long userId) {
-        Sinks.Many<ServerSentEvent<MessageNotification>> sink = userSinks.remove(userId);
-        if (sink != null) {
-            sink.tryEmitComplete();
-            logger.info("Cleaned up notification sink for user: {}", userId);
+    private void cleanupUserSink(Long userId, Sinks.Many<ServerSentEvent<MessageNotification>> sink) {
+//        Sinks.Many<ServerSentEvent<MessageNotification>> sink = userSinks.remove(userId);
+//        if (sink != null) {
+//            sink.tryEmitComplete();
+//            logger.info("Cleaned up notification sink for user: {}", userId);
+//        }
+        Sinks.Many<ServerSentEvent<MessageNotification>> current = userSinks.get(userId);
+        if (current == null || current.currentSubscriberCount() == 0) {
+            try {
+                userSinks.remove(userId);
+                sink.tryEmitComplete();
+            } finally {
+                logger.info("Cleaned up notification sink for user: {}", userId);
+            }
         }
+//        userSinks.compute(userId, (k, existing) -> {
+//            if (existing == sink) {
+//                try {
+//                    sink.tryEmitComplete();
+//                } finally {
+//                    logger.info("Cleaned up notification sink for user: {}", userId);
+//                }
+//                return null;
+//            }
+//            return existing;
+//        });
     }
 
     /**
@@ -201,7 +223,7 @@ public class MessageNotificationConsumer implements Consumer<Message> {
                 logger.warn("Failed to send notification to user {}: {}", userId, result);
                 if (result == Sinks.EmitResult.FAIL_NON_SERIALIZED) {
                     // Clean up failed sink
-                    cleanupUserSink(userId);
+                    cleanupUserSink(userId, sink);
                 }
             }
         } else {
@@ -258,6 +280,7 @@ public class MessageNotificationConsumer implements Consumer<Message> {
                 )));
         return stats;
     }
+
     private MessageNotification createHeartbeatNotification(Long userId) {
         MessageNotification heartbeat = new MessageNotification();
         heartbeat.setId(System.currentTimeMillis());

@@ -19,10 +19,17 @@ COPY src ./src
 RUN mvn clean package -DskipTests
 
 # Stage 2: Create the runtime image
-FROM eclipse-temurin:21-jre
+#FROM eclipse-temurin:21-jre
+#FROM java24-base:latest
+#FROM java24-base:slim
+FROM openjdk:21-slim
 
-# Install curl for health checks (optional)
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+# Install network diagnostic tools for JMX troubleshooting
+RUN apt-get update && apt-get install -y \
+    net-tools \
+    curl \
+    procps \
+    && rm -rf /var/lib/apt/lists/*
 
 # Create a non-root user for security
 RUN groupadd -r appuser && useradd -r -g appuser appuser
@@ -39,15 +46,17 @@ RUN mkdir -p /app/logs && chown -R appuser:appuser /app
 # Switch to non-root user
 USER appuser
 
-# Expose the port the app runs on
-EXPOSE 8080
+# Expose the port the app runs on and JMX port
+EXPOSE 8080 9898
 
-# Set JVM options for containerized environment
-ENV JAVA_OPTS="-Xmx512m -Xms256m -XX:+UseG1GC -XX:+UseContainerSupport -Djava.security.egd=file:/dev/./urandom"
+# Set JVM options for containerized environment with JMX support (will be overridden by K8s env vars)
+ENV JAVA_OPTS="-XX:+UseG1GC -XX:MaxGCPauseMillis=200 \
+    -Xms320m -Xmx1520m -XX:+UseStringDeduplication \
+    -XX:+UseContainerSupport"
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:8080/actuator/health || exit 1
+#HEALTHCHECK --interval=30s --timeout=3s --start-period=60s --retries=3 \
+#    CMD curl -f http://localhost:8080/actuator/health || exit 1
 
-# Run the application
-ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
+# Run the application directly as PID 1 and use environment variables
+ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar app.jar"]

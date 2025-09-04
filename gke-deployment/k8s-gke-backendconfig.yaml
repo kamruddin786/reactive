@@ -16,10 +16,10 @@ spec:
     unhealthyThreshold: 3
     healthyThreshold: 1
   sessionAffinity:
-    affinityType: "NONE"
-#    affinityType: "GENERATED_COOKIE"
-#    affinityCookieTtlSec: 3600
-#    affinityType: "CLIENT_IP"
+    affinityType: "GENERATED_COOKIE"
+    affinityCookieTtlSec: 3600
+#    affinityType: "NONE"
+  #    affinityType: "CLIENT_IP"
   # Enable streaming support
   customRequestHeaders:
     headers:

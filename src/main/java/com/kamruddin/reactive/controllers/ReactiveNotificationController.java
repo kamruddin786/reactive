@@ -94,7 +94,7 @@ public class ReactiveNotificationController {
                     "service", "ReactiveNotificationController",
                     "timestamp", System.currentTimeMillis(),
                     "environment", "GKE",
-                    "activeConnections", stats.getOrDefault("activeStreams", 0),
+                    "activeUsers", stats.getOrDefault("totalUsers", 0),
                     "podId", podId
             );
             return ResponseEntity.ok(health);
