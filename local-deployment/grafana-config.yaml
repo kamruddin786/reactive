@@ -1,0 +1,175 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+  labels:
+    app: grafana
+data:
+  prometheus.yaml: |-
+    {
+        "apiVersion": 1,
+        "datasources": [
+            {
+               "access":"proxy",
+                "editable": true,
+                "name": "prometheus",
+                "orgId": 1,
+                "type": "prometheus",
+                "url": "http://prometheus-local-service:9090",
+                "version": 1
+            }
+        ]
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-config
+  labels:
+    app: grafana
+data:
+  dashboard.yaml: |-
+    apiVersion: 1
+    providers:
+      - name: 'default'
+        orgId: 1
+        folder: ''
+        type: file
+        disableDeletion: false
+        updateIntervalSeconds: 10
+        options:
+          path: /var/lib/grafana/dashboards
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-reactive-sse
+  labels:
+    app: grafana
+data:
+  reactive-sse-dashboard.json: |-
+    {
+      "dashboard": {
+        "id": null,
+        "title": "Reactive SSE Application Dashboard",
+        "tags": ["reactive", "sse", "monitoring"],
+        "style": "dark",
+        "timezone": "browser",
+        "panels": [
+          {
+            "id": 1,
+            "title": "Application Uptime",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "process_uptime_seconds{job=\"reactive-sse-app\"}",
+                "legendFormat": "Uptime (seconds)"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "unit": "s",
+                "color": {
+                  "mode": "thresholds"
+                },
+                "thresholds": {
+                  "steps": [
+                    {"color": "red", "value": 0},
+                    {"color": "yellow", "value": 300},
+                    {"color": "green", "value": 3600}
+                  ]
+                }
+              }
+            },
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+          },
+          {
+            "id": 2,
+            "title": "HTTP Requests Rate",
+            "type": "timeseries",
+            "targets": [
+              {
+                "expr": "rate(http_server_requests_seconds_count{job=\"reactive-sse-app\"}[5m])",
+                "legendFormat": "{{method}} {{uri}}"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "unit": "reqps"
+              }
+            },
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+          },
+          {
+            "id": 3,
+            "title": "JVM Memory Usage",
+            "type": "timeseries",
+            "targets": [
+              {
+                "expr": "jvm_memory_used_bytes{job=\"reactive-sse-app\"}",
+                "legendFormat": "{{area}} - {{id}}"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "unit": "bytes"
+              }
+            },
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}
+          },
+          {
+            "id": 4,
+            "title": "JVM GC Rate",
+            "type": "timeseries",
+            "targets": [
+              {
+                "expr": "rate(jvm_gc_collection_seconds_count{job=\"reactive-sse-app\"}[5m])",
+                "legendFormat": "{{gc}}"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "unit": "ops"
+              }
+            },
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
+          },
+          {
+            "id": 5,
+            "title": "Redis Connection Pool",
+            "type": "timeseries",
+            "targets": [
+              {
+                "expr": "lettuce_command_completion_seconds_count{job=\"reactive-sse-app\"}",
+                "legendFormat": "Commands"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "unit": "ops"
+              }
+            },
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16}
+          },
+          {
+            "id": 6,
+            "title": "Active Threads",
+            "type": "timeseries",
+            "targets": [
+              {
+                "expr": "jvm_threads_live_threads{job=\"reactive-sse-app\"}",
+                "legendFormat": "Live Threads"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "unit": "short"
+              }
+            },
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16}
+          }
+        ],
+        "time": {"from": "now-1h", "to": "now"},
+        "refresh": "30s"
+      }
+    }
