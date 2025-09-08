@@ -47,7 +47,7 @@ public class MessageNotificationConsumer implements Consumer<Message> {
 //        userTerminationState.put(userId, new AtomicBoolean(false));
 
         // Create or get existing sink for this user
-        Sinks.Many<ServerSentEvent<MessageNotification>> sink = userSinks.computeIfAbsent(userId,k -> Sinks.many().multicast().onBackpressureBuffer());
+        Sinks.Many<ServerSentEvent<MessageNotification>> sink = userSinks.computeIfAbsent(userId,k -> Sinks.many().multicast().onBackpressureBuffer(4, false));
 //        Sinks.Many<ServerSentEvent<MessageNotification>> sink = Sinks.many().unicast().onBackpressureBuffer();
         // Current unicast sink will be replaced if user reconnects
 //        Sinks.Many<ServerSentEvent<MessageNotification>> old = userSinks.put(userId, sink);

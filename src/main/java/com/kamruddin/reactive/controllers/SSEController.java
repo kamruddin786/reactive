@@ -8,7 +8,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.reactive.function.client.WebClient;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+//import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import reactor.core.publisher.Flux;
 
 import java.io.IOException;
@@ -82,86 +82,86 @@ public class SSEController {
         return dataEvents.concatWith(Flux.just(completionEvent));
     }
 
-    @GetMapping("/stream-sse-mvc")
-    public SseEmitter streamSseMvc() {
-        SseEmitter emitter = new SseEmitter();
-        ExecutorService sseMvcExecutor = Executors.newSingleThreadExecutor();
-        sseMvcExecutor.execute(() -> {
-            try {
-                for (int i = 0; true; i++) {
-                    SseEmitter.SseEventBuilder event = SseEmitter.event()
-                            .data("SSE MVC - " + LocalTime.now().toString())
-                            .id(String.valueOf(i))
-                            .name("sse event - mvc");
-                    emitter.send(event);
-                    Thread.sleep(1000);
-                }
-            } catch (Exception ex) {
-                emitter.completeWithError(ex);
-            }
-        });
-        return emitter;
-    }
+//    @GetMapping("/stream-sse-mvc")
+//    public SseEmitter streamSseMvc() {
+//        SseEmitter emitter = new SseEmitter();
+//        ExecutorService sseMvcExecutor = Executors.newSingleThreadExecutor();
+//        sseMvcExecutor.execute(() -> {
+//            try {
+//                for (int i = 0; true; i++) {
+//                    SseEmitter.SseEventBuilder event = SseEmitter.event()
+//                            .data("SSE MVC - " + LocalTime.now().toString())
+//                            .id(String.valueOf(i))
+//                            .name("sse event - mvc");
+//                    emitter.send(event);
+//                    Thread.sleep(1000);
+//                }
+//            } catch (Exception ex) {
+//                emitter.completeWithError(ex);
+//            }
+//        });
+//        return emitter;
+//    }
 
-    @GetMapping("sse-1")
-    public SseEmitter sse1() {
-        SseEmitter emitter = new SseEmitter();
-        ExecutorService executor = Executors.newSingleThreadExecutor();
-        executor.execute(() -> {
-            try {
-                SseEmitter.SseEventBuilder event1 = SseEmitter.event()
-                        .data("Started Streaming at " + LocalTime.now())
-                        .id(String.valueOf(System.currentTimeMillis()))
-                        .name("sse-event");
-                emitter.send(event1);
-
-                WebClient webClient = WebClient.create("http://localhost:8080/test");
-                webClient.get().uri("/resp").retrieve()
-                        .bodyToFlux(String.class)
-                        .subscribe(data -> {
-                                    try {
-                                        SseEmitter.SseEventBuilder event = SseEmitter.event()
-                                                .data(data)
-                                                .id(String.valueOf(System.currentTimeMillis()))
-                                                .name("sse-event");
-                                        emitter.send(event);
-                                    } catch (IOException e) {
-                                        logger.error("Error sending SSE event: ", e);
-                                        emitter.completeWithError(e);
-                                    }
-                                },
-                                error -> {
-                                    logger.error("Error in WebClient stream: ", error);
-                                    emitter.completeWithError(error);
-                                },
-                                () -> {
-                                    try {
-                                        logger.info("WebClient stream completed");
-                                        // Send completion signal before closing
-                                        SseEmitter.SseEventBuilder completionEvent = SseEmitter.event()
-                                                .data("Stream completed successfully")
-                                                .id(String.valueOf(System.currentTimeMillis()))
-                                                .name("stream-complete");
-                                        emitter.send(completionEvent);
-
-                                        // Small delay to ensure completion event is sent
-                                        Thread.sleep(100);
-                                        emitter.complete(); // ✅ CORRECT: Complete only when stream is done
-                                    } catch (Exception e) {
-                                        logger.error("Error sending completion event: ", e);
-                                        emitter.completeWithError(e);
-                                    } finally {
-                                        executor.shutdown();
-                                    }
-                                });
-            } catch (Exception e) {
-                logger.error("Error in SSE stream: ", e);
-                emitter.completeWithError(e);
-            }
-
-        });
-        return emitter;
-    }
+//    @GetMapping("sse-1")
+//    public SseEmitter sse1() {
+//        SseEmitter emitter = new SseEmitter();
+//        ExecutorService executor = Executors.newSingleThreadExecutor();
+//        executor.execute(() -> {
+//            try {
+//                SseEmitter.SseEventBuilder event1 = SseEmitter.event()
+//                        .data("Started Streaming at " + LocalTime.now())
+//                        .id(String.valueOf(System.currentTimeMillis()))
+//                        .name("sse-event");
+//                emitter.send(event1);
+//
+//                WebClient webClient = WebClient.create("http://localhost:8080/test");
+//                webClient.get().uri("/resp").retrieve()
+//                        .bodyToFlux(String.class)
+//                        .subscribe(data -> {
+//                                    try {
+//                                        SseEmitter.SseEventBuilder event = SseEmitter.event()
+//                                                .data(data)
+//                                                .id(String.valueOf(System.currentTimeMillis()))
+//                                                .name("sse-event");
+//                                        emitter.send(event);
+//                                    } catch (IOException e) {
+//                                        logger.error("Error sending SSE event: ", e);
+//                                        emitter.completeWithError(e);
+//                                    }
+//                                },
+//                                error -> {
+//                                    logger.error("Error in WebClient stream: ", error);
+//                                    emitter.completeWithError(error);
+//                                },
+//                                () -> {
+//                                    try {
+//                                        logger.info("WebClient stream completed");
+//                                        // Send completion signal before closing
+//                                        SseEmitter.SseEventBuilder completionEvent = SseEmitter.event()
+//                                                .data("Stream completed successfully")
+//                                                .id(String.valueOf(System.currentTimeMillis()))
+//                                                .name("stream-complete");
+//                                        emitter.send(completionEvent);
+//
+//                                        // Small delay to ensure completion event is sent
+//                                        Thread.sleep(100);
+//                                        emitter.complete(); // ✅ CORRECT: Complete only when stream is done
+//                                    } catch (Exception e) {
+//                                        logger.error("Error sending completion event: ", e);
+//                                        emitter.completeWithError(e);
+//                                    } finally {
+//                                        executor.shutdown();
+//                                    }
+//                                });
+//            } catch (Exception e) {
+//                logger.error("Error in SSE stream: ", e);
+//                emitter.completeWithError(e);
+//            }
+//
+//        });
+//        return emitter;
+//    }
 
     @GetMapping(path = "/connect/{clientId}", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<ServerSentEvent<String>> connect(@PathVariable String clientId) {

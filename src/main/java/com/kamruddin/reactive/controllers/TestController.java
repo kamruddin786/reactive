@@ -80,7 +80,7 @@ public class TestController {
         connectionsActive.set(true);
 
         // Create connections in batches to avoid overwhelming the connection pool
-        Flux.range(1500, 6000)
+        Flux.range(1500, 10000)
                 .buffer(BATCH_SIZE) // Process in batches of 100
                 .delayElements(Duration.ofMillis(BATCH_DELAY_MS)) // Small delay between batches
                 .flatMap(batch ->
@@ -117,10 +117,10 @@ public class TestController {
                             rs.failure().getLocalizedMessage()));
 
             // Define the logic for a single, persistent SSE connection
-            Flux<Map> sseConnection = webClient.get()
+            Flux<MessageNotification> sseConnection = webClient.get()
                     .uri("/api/notifications/user/{userId}/stream", userId)
                     .retrieve()
-                    .bodyToFlux(Map.class)
+                    .bodyToFlux(MessageNotification.class)
                     .doOnSubscribe(subscription -> logger.info("Subscribed to SSE stream for user {}", userId))
                     .doOnError(error -> logger.warn("Error on SSE stream for user {}: {}", userId, error.getMessage()))
                     .doOnCancel(() -> logger.info("SSE stream for user {} was cancelled.", userId))
@@ -136,7 +136,13 @@ public class TestController {
             // Subscribe to the persistent connection and manage its lifecycle
             Disposable connection = sseConnection
                     .subscribe(
-                            response -> logger.info("############## Response for user {}: {}", userId, response),
+                            response -> {
+                                if (response != null && "heartbeat".equals(response.getType())) {
+                                    logger.debug("Heartbeat received for user - {}, with timestamp - {}", userId, response.getTimestamp());
+                                } else {
+                                    logger.info("Response for user {}: {}", userId, response);
+                                }
+                            },
                             error -> {
                                 logger.error("Connection permanently failed for user {}: {}", userId, error.getMessage());
                                 activeConnections.remove(userId); // Remove on permanent failure (e.g., timeout)

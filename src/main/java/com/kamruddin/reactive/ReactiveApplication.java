@@ -6,7 +6,7 @@ import org.springframework.boot.web.servlet.ServletComponentScan;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 @SpringBootApplication
-@ServletComponentScan(basePackages = "com.kamruddin.reactive.servlets")
+//@ServletComponentScan(basePackages = "com.kamruddin.reactive.servlets")
 @EnableScheduling
 public class ReactiveApplication {
 

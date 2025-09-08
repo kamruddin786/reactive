@@ -6,7 +6,7 @@ metadata:
     app: reactive-sse-local
     environment: local
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: reactive-sse-local
@@ -40,7 +40,7 @@ spec:
         - name: JAVA_OPTS
           value: >
             -XX:+UseG1GC -XX:MaxGCPauseMillis=200 
-            -Xms256m -Xmx1400m -XX:+UseStringDeduplication 
+            -Xms256m -Xmx1152m -XX:+UseStringDeduplication 
             -XX:+UseContainerSupport
             -Dcom.sun.management.jmxremote
             -Dcom.sun.management.jmxremote.port=9696

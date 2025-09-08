@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
       - name: reactive-sse-app
-        image: us-central1-docker.pkg.dev/rfx-eng-tm-poc-d/poc-images/reactive-sse-app:v2.1.8
+        image: us-central1-docker.pkg.dev/rfx-eng-tm-poc-d/poc-images/reactive-sse-app:v2.1.10
         ports:
         - containerPort: 8080
           name: http
@@ -40,7 +40,7 @@ spec:
         - name: JAVA_OPTS
           value: >
             -XX:+UseG1GC -XX:MaxGCPauseMillis=200 
-            -Xms256m -Xmx1400m -XX:+UseStringDeduplication 
+            -Xms256m -Xmx1152m -XX:+UseStringDeduplication 
             -XX:+UseContainerSupport
             -Dcom.sun.management.jmxremote
             -Dcom.sun.management.jmxremote.port=9898
