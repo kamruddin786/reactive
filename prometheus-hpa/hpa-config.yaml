@@ -1,0 +1,33 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: reactive-sse-local-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: reactive-sse-local
+  minReplicas: 1
+  maxReplicas: 4  # Maximum replicas for local environment
+  metrics:
+  # Custom Pods metric for active user count
+  - type: Pods
+    pods:
+      metric:
+        name: sse_active_users
+      target:
+        type: AverageValue
+        averageValue: "5000"  # target average active users per pod
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+    scaleDown:
+      stabilizationWindowSeconds: 120  # shorter for faster downscale locally
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
