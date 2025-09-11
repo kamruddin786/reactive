@@ -1,6 +1,6 @@
 gcloud beta container --project "rfx-eng-tm-poc-d" clusters create "notification-cluster" \
 --zone "us-central1-a" --tier "standard" \
---no-enable-basic-auth --cluster-version "1.33.2-gke.1240000" \
+--no-enable-basic-auth --cluster-version "1.33.4-gke.1036000" \
 --release-channel "regular" --machine-type "e2-custom-2-3072" \
 --image-type "COS_CONTAINERD" --disk-type "pd-balanced" \
 --disk-size "40" --metadata disable-legacy-endpoints=true \

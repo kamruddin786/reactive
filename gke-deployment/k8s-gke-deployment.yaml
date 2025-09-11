@@ -6,7 +6,7 @@ metadata:
     app: reactive-sse-app
     version: v1
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: reactive-sse-app
@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
       - name: reactive-sse-app
-        image: us-central1-docker.pkg.dev/rfx-eng-tm-poc-d/poc-images/reactive-sse-app:v2.1.10
+        image: us-central1-docker.pkg.dev/rfx-eng-tm-poc-d/poc-images/reactive-sse-app:v2.1.11
         ports:
         - containerPort: 8080
           name: http
@@ -37,10 +37,22 @@ spec:
           value: "0"
         - name: REDIS_POOL_MAX_WAIT
           value: "-1ms"
+        - name: REACTOR_NETTY_POOL_MAX_CONNECTIONS
+          value: "15000"
+        - name: REACTOR_NETTY_POOL_MAX_IDLE_TIME
+          value: "300s"
+        - name: REACTOR_NETTY_POOL_MAX_LIFE_TIME
+          value: "3600s"
+        - name: SERVER_NETTY_CONNECTION_TIMEOUT
+          value: "60s"
+        - name: SERVER_NETTY_IDLE_TIMEOUT
+          value: "60s"
+        - name: SPRING_WEBFLUX_MULTIPART_MAX_IN_MEMORY_SIZE
+          value: "1KB"
         - name: JAVA_OPTS
           value: >
             -XX:+UseG1GC -XX:MaxGCPauseMillis=200 
-            -Xms256m -Xmx1152m -XX:+UseStringDeduplication 
+            -Xms256m -Xmx768m -XX:+UseStringDeduplication 
             -XX:+UseContainerSupport
             -Dcom.sun.management.jmxremote
             -Dcom.sun.management.jmxremote.port=9898
@@ -53,12 +65,6 @@ spec:
           value: "health,info,metrics,heapdump"
         - name: MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS
           value: "always"
-        - name: SERVER_TOMCAT_KEEP_ALIVE_TIMEOUT
-          value: "60000"
-        - name: SERVER_TOMCAT_MAX_KEEP_ALIVE_REQUESTS
-          value: "1000"
-        - name: SERVER_TOMCAT_CONNECTION_TIMEOUT
-          value: "60000"
         livenessProbe:
           httpGet:
             path: /actuator/health
@@ -80,7 +86,7 @@ spec:
             memory: "300Mi"
             cpu: "100m"
           limits:
-            memory: "1.5Gi"
+            memory: "1Gi"
             cpu: "500m"
         volumeMounts:
         - name: tmp
@@ -89,4 +95,3 @@ spec:
       - name: tmp
         emptyDir: {}
       restartPolicy: Always
-

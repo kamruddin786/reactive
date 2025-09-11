@@ -1,0 +1,94 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "reactive-sse-app.fullname" . }}
+  labels:
+    {{- include "reactive-sse-app.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "reactive-sse-app.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "reactive-sse-app.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+      - name: {{ .Chart.Name }}
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        ports:
+        - containerPort: {{ .Values.service.targetPort }}
+          name: http
+        env:
+        - name: SPRING_PROFILES_ACTIVE
+          value: { { .Values.springBoot.profile | quote } }
+        - name: REDIS_HOST
+          value: { { .Values.redis.host | quote } }
+        - name: REDIS_PORT
+          value: { { .Values.redis.port | quote } }
+        - name: REDIS_POOL_MAX_ACTIVE
+          value: { { .Values.redis.pool.maxActive | quote } }
+        - name: REDIS_POOL_MAX_IDLE
+          value: { { .Values.redis.pool.maxIdle | quote } }
+        - name: REDIS_POOL_MIN_IDLE
+          value: { { .Values.redis.pool.minIdle | quote } }
+        - name: REDIS_POOL_MAX_WAIT
+          value: { { .Values.redis.pool.maxWait | quote } }
+        - name: REACTOR_NETTY_POOL_MAX_CONNECTIONS
+          value: { { .Values.reactorNetty.pool.maxConnections | quote } }
+        - name: REACTOR_NETTY_POOL_MAX_IDLE_TIME
+          value: { { .Values.reactorNetty.pool.maxIdleTime | quote } }
+        - name: REACTOR_NETTY_POOL_MAX_LIFE_TIME
+          value: { { .Values.reactorNetty.pool.maxLifeTime | quote } }
+        - name: SERVER_NETTY_CONNECTION_TIMEOUT
+          value: { { .Values.springBoot.netty.connectionTimeout | quote } }
+        - name: SERVER_NETTY_IDLE_TIMEOUT
+          value: { { .Values.springBoot.netty.idleTimeout | quote } }
+        - name: SPRING_WEBFLUX_MULTIPART_MAX_IN_MEMORY_SIZE
+          value: { { .Values.springBoot.webflux.multipart.maxInMemorySize | quote } }
+        - name: JAVA_OPTS
+          value: {{ .Values.javaOpts | quote }}
+        - name: MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE
+          value: "{{ .Values.springBoot.management.endpoints.exposure }}"
+        - name: MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS
+          value: "{{ .Values.springBoot.management.health.showDetails }}"
+        livenessProbe:
+          httpGet:
+            path: /actuator/health
+            port: {{ .Values.service.targetPort }}
+          initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
+          periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+          timeoutSeconds: {{ .Values.probes.liveness.timeoutSeconds }}
+          failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+        readinessProbe:
+          httpGet:
+            path: /actuator/health
+            port: {{ .Values.service.targetPort }}
+          initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
+          periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+          timeoutSeconds: {{ .Values.probes.readiness.timeoutSeconds }}
+          failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
+        resources:
+          {{- toYaml .Values.resources | nindent 10 }}
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      restartPolicy: Always
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+

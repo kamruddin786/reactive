@@ -1,0 +1,33 @@
+{{- if .Values.gke.ingress.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Values.gke.ingress.name }}
+  labels:
+    {{- include "reactive-sse-app.labels" . | nindent 4 }}
+  annotations:
+    {{- toYaml .Values.gke.ingress.annotations | nindent 4 }}
+spec:
+  {{- if .Values.gke.ingress.defaultBackend.enabled }}
+  defaultBackend:
+    service:
+      name: {{ include "reactive-sse-app.fullname" . }}-service
+      port:
+        number: {{ .Values.service.port }}
+  {{- end }}
+  rules:
+  {{- range .Values.gke.ingress.rules }}
+  - http:
+      paths:
+      {{- range .http.paths }}
+      - path: {{ .path }}
+        pathType: {{ .pathType }}
+        backend:
+          service:
+            name: {{ include "reactive-sse-app.fullname" $ }}-service
+            port:
+              number: {{ $.Values.service.port }}
+      {{- end }}
+  {{- end }}
+{{- end }}

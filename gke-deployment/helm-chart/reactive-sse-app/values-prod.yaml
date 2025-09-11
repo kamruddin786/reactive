@@ -1,0 +1,67 @@
+# Production values for reactive-sse-app
+# Override default values for production environment
+
+# Increase resources for production load
+resources:
+  requests:
+    memory: "512Mi"
+    cpu: "200m"
+  limits:
+    memory: "2Gi"
+    cpu: "1000m"
+
+# Production autoscaling - higher limits
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+  targetMemoryUtilizationPercentage: 80
+
+# Production-ready probes with faster detection
+probes:
+  liveness:
+    initialDelaySeconds: 45
+    periodSeconds: 20
+    timeoutSeconds: 10
+    failureThreshold: 3
+  readiness:
+    initialDelaySeconds: 20
+    periodSeconds: 5
+    timeoutSeconds: 5
+    failureThreshold: 2
+
+# Production JVM settings
+javaOpts: >
+  -XX:+UseG1GC -XX:MaxGCPauseMillis=100
+  -Xms512m -Xmx1792m -XX:+UseStringDeduplication
+  -XX:+UseContainerSupport
+  -XX:+UnlockExperimentalVMOptions
+  -XX:+UseCGroupMemoryLimitForHeap
+  -Dcom.sun.management.jmxremote
+  -Dcom.sun.management.jmxremote.port=9898
+  -Dcom.sun.management.jmxremote.rmi.port=9898
+  -Dcom.sun.management.jmxremote.local.only=false
+  -Dcom.sun.management.jmxremote.authenticate=false
+  -Dcom.sun.management.jmxremote.ssl=false
+  -Djava.rmi.server.hostname=127.0.0.1
+
+# Production ingress configuration
+gke:
+  ingress:
+    enabled: true
+    className: "gce"
+    annotations:
+      kubernetes.io/ingress.class: "gce"
+      kubernetes.io/ingress.global-static-ip-name: "reactive-sse-app-prod-ip"
+      ingress.gcp.kubernetes.io/frontend-config: "reactive-sse-app-frontendconfig"
+      cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    hosts:
+      - host: api.yourprodomain.com
+        paths:
+          - path: /api/notifications
+            pathType: Prefix
+    tls:
+      - secretName: reactive-sse-app-tls
+        hosts:
+          - api.yourprodomain.com
+

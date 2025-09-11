@@ -27,6 +27,10 @@ kubectl apply -f k8s-gke-deployment.yaml
 echo "⏳ Waiting for deployment to be ready..."
 kubectl wait --for=condition=available --timeout=300s deployment/reactive-sse-app
 
+# Apply HPA for autoscaling
+#echo "📈 Applying Horizontal Pod Autoscaler..."
+#kubectl apply -f k8s-gke-hpa.yaml
+
 # Apply Ingress (references FrontendConfig and BackendConfig)
 echo "🌐 Applying Ingress..."
 kubectl apply -f k8s-gke-ingress.yaml
@@ -37,12 +41,18 @@ echo "✅ Deployment complete!"
 echo "📊 Deployment Status:"
 kubectl get pods -l app=reactive-sse-app
 kubectl get services -l app=reactive-sse-app
+#kubectl get hpa reactive-sse-app-hpa
 kubectl get ingress reactive-sse-app-ingress
 
 echo ""
 echo "🔍 To monitor the deployment:"
 echo "  kubectl logs -f deployment/reactive-sse-app"
 echo "  kubectl describe ingress reactive-sse-app-ingress"
+echo "  kubectl describe hpa reactive-sse-app-hpa"
+echo ""
+echo "📈 To monitor autoscaling:"
+echo "  kubectl get hpa reactive-sse-app-hpa --watch"
+echo "  kubectl top pods -l app=reactive-sse-app"
 echo ""
 echo "🩺 Health check endpoints:"
 echo "  /api/notifications/health - General health check"
@@ -51,6 +61,9 @@ echo "  /api/notifications/stats - Connection statistics"
 echo ""
 echo "🌊 SSE Stream endpoint:"
 echo "  /api/notifications/user/{userId}/stream"
+echo ""
+echo "⚙️  Autoscaling Configuration:"
+echo "  Initial pods: 1, Max pods: 2, Memory threshold: 90%"
 echo ""
 echo "⚠️  Important: Wait 5-10 minutes for GKE load balancer to fully configure"
 echo "    The ingress IP will be available once the load balancer is ready."

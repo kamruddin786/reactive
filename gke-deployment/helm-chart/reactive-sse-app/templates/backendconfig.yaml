@@ -1,0 +1,32 @@
+{{- if .Values.gke.backendConfig.enabled }}
+---
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: {{ .Values.gke.backendConfig.name }}
+  labels:
+    {{- include "reactive-sse-app.labels" . | nindent 4 }}
+spec:
+  timeoutSec: {{ .Values.gke.backendConfig.timeoutSec }}
+  connectionDraining:
+    drainingTimeoutSec: {{ .Values.gke.backendConfig.connectionDrainingTimeoutSec }}
+  healthCheck:
+    checkIntervalSec: {{ .Values.gke.backendConfig.healthCheck.checkIntervalSec }}
+    port: {{ .Values.gke.backendConfig.healthCheck.port }}
+    type: {{ .Values.gke.backendConfig.healthCheck.type }}
+    requestPath: {{ .Values.gke.backendConfig.healthCheck.requestPath }}
+    timeoutSec: {{ .Values.gke.backendConfig.healthCheck.timeoutSec }}
+    unhealthyThreshold: {{ .Values.gke.backendConfig.healthCheck.unhealthyThreshold }}
+    healthyThreshold: {{ .Values.gke.backendConfig.healthCheck.healthyThreshold }}
+  sessionAffinity:
+    affinityType: "{{ .Values.gke.backendConfig.sessionAffinity.affinityType }}"
+    affinityCookieTtlSec: {{ .Values.gke.backendConfig.sessionAffinity.affinityCookieTtlSec }}
+  customRequestHeaders:
+    headers:
+    {{- range .Values.gke.backendConfig.customRequestHeaders.headers }}
+    - {{ . | quote }}
+    {{- end }}
+  logging:
+    enable: {{ .Values.gke.backendConfig.logging.enable }}
+    sampleRate: {{ .Values.gke.backendConfig.logging.sampleRate }}
+{{- end }}

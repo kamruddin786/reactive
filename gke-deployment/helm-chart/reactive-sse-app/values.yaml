@@ -1,0 +1,138 @@
+# Default values for reactive-sse-app
+replicaCount: 1
+
+image:
+  repository: us-central1-docker.pkg.dev/rfx-eng-tm-poc-d/poc-images/reactive-sse-app
+  pullPolicy: IfNotPresent
+  tag: "v2.1.11"
+
+nameOverride: ""
+fullnameOverride: ""
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+  annotations:
+    cloud.google.com/backend-config: '{"default": "reactive-sse-backendconfig"}'
+    cloud.google.com/neg: '{"ingress": true}'
+
+# Redis configuration
+redis:
+  host: "10.139.0.107"
+  port: "6379"
+  pool:
+    maxActive: "8"
+    maxIdle: "8"
+    minIdle: "0"
+    maxWait: "-1ms"
+
+# Java application configuration
+javaOpts: >
+  -XX:+UseG1GC -XX:MaxGCPauseMillis=200 
+  -Xms256m -Xmx768m -XX:+UseStringDeduplication 
+  -XX:+UseContainerSupport
+  -Dcom.sun.management.jmxremote
+  -Dcom.sun.management.jmxremote.port=9898
+  -Dcom.sun.management.jmxremote.rmi.port=9898
+  -Dcom.sun.management.jmxremote.local.only=false
+  -Dcom.sun.management.jmxremote.authenticate=false
+  -Dcom.sun.management.jmxremote.ssl=false
+  -Djava.rmi.server.hostname=127.0.0.1
+
+# Spring Boot configuration
+springBoot:
+  profile: "k8s"
+  management:
+    endpoints:
+      exposure: "health,info,metrics,heapdump"
+    health:
+      showDetails: "always"
+    netty:
+      connectionTimeout: "60s"
+      idleTimeout: "60s"
+    webflux:
+      multipart:
+        maxInMemorySize: "1KB"
+
+# Reactor Netty configuration
+reactorNetty:
+  pool:
+    maxConnections: "15000"
+    maxIdleTime: "300s"
+    maxLifeTime: "3600s"
+
+# Resource configuration
+resources:
+  requests:
+    memory: "300Mi"
+    cpu: "100m"
+  limits:
+    memory: "1Gi"
+    cpu: "500m"
+
+# Probes configuration
+probes:
+  liveness:
+    initialDelaySeconds: 60
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 3
+  readiness:
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+# Autoscaling configuration
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 2
+  targetMemoryUtilizationPercentage: 400
+  scaleUpStabilizationWindowSeconds: 60
+  scaleDownStabilizationWindowSeconds: 300
+
+# GKE specific configurations
+gke:
+  backendConfig:
+    enabled: true
+    name: "reactive-sse-backendconfig"
+    timeoutSec: 3600
+    connectionDrainingTimeoutSec: 300
+    healthCheck:
+      checkIntervalSec: 10
+      port: 8080
+      type: HTTP
+      requestPath: /actuator/health
+      timeoutSec: 5
+      unhealthyThreshold: 3
+      healthyThreshold: 1
+    sessionAffinity:
+      affinityType: "GENERATED_COOKIE"
+      affinityCookieTtlSec: 3600
+    customRequestHeaders:
+      headers:
+        - "Cache-Control:no-cache, no-transform"
+    logging:
+      enable: true
+      sampleRate: 1.0
+
+  ingress:
+    enabled: true
+    name: "reactive-sse-app-ingress"
+    annotations:
+      ingressClassName: "gce"
+      kubernetes.io/ingress.allow-http: "true"
+    defaultBackend:
+      enabled: true
+    rules:
+      - http:
+          paths:
+            - path: /
+              pathType: Prefix
+
+# Node selection and tolerations
+nodeSelector: {}
+tolerations: []
+affinity: {}

@@ -15,6 +15,10 @@ spec:
       labels:
         app: reactive-sse-local
         environment: local
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/actuator/prometheus"
+        prometheus.io/port: "8080"
     spec:
       containers:
       - name: reactive-sse
@@ -40,7 +44,7 @@ spec:
         - name: JAVA_OPTS
           value: >
             -XX:+UseG1GC -XX:MaxGCPauseMillis=200 
-            -Xms256m -Xmx1152m -XX:+UseStringDeduplication 
+            -Xms256m -Xmx768m -XX:+UseStringDeduplication 
             -XX:+UseContainerSupport
             -Dcom.sun.management.jmxremote
             -Dcom.sun.management.jmxremote.port=9696
@@ -55,10 +59,10 @@ spec:
           value: "*"
         resources:
           requests:
-            memory: "512Mi"
+            memory: "768Mi"
             cpu: "200m"
           limits:
-            memory: "1.5Gi"
+            memory: "1Gi"
             cpu: "1000m"
         livenessProbe:
           httpGet:
@@ -106,12 +110,6 @@ spec:
   minReplicas: 1
   maxReplicas: 4  # Reduced for local environment
   metrics:
-  - type: Resource
-    resource:
-      name: cpu
-      target:
-        type: Utilization
-        averageUtilization: 80  # Higher threshold for local
   - type: Resource
     resource:
       name: memory

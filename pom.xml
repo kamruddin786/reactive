@@ -58,6 +58,11 @@
 			<groupId>io.micrometer</groupId>
 			<artifactId>micrometer-tracing-bridge-brave</artifactId>
 		</dependency>
+		<!-- Add Prometheus registry for custom metrics exposure -->
+		<dependency>
+			<groupId>io.micrometer</groupId>
+			<artifactId>micrometer-registry-prometheus</artifactId>
+		</dependency>
 
 <!--		<dependency>-->
 <!--			<groupId>org.springframework.boot</groupId>-->

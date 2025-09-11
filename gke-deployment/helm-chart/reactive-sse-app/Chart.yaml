@@ -1,0 +1,16 @@
+apiVersion: v2
+name: reactive-sse-app
+description: A Helm chart for Reactive SSE Application with autoscaling
+type: application
+version: 1.0.0
+appVersion: "2.1.11"
+keywords:
+  - reactive
+  - sse
+  - streaming
+  - spring-boot
+home: https://github.com/kamruddin786/reactive
+maintainers:
+  - name: Kamruddin Mansoori
+    email: kamruddin.mansoori@gmail.com
+

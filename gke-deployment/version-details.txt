@@ -1,3 +1,4 @@
 2.1.8 -> image is based on openjdk-21-slim with unicast sink implementation, has issues with subscriber count
 2.1.9 -> image is based on openjdk-21-slim with multicast sink implementation, fixed subscriber count issue
 2.1.10 -> image is based on openjdk-21-slim with multicast sink implementation, added backpressure handling with queue size of 4
+2.1.11 -> image is based on openjdk-21-slim with multicast sink implementation, removed tomcat now it's running on netty

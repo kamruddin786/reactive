@@ -294,4 +294,20 @@ public class MessageNotificationConsumer implements Consumer<Message> {
         heartbeat.setPodId(getHostname());
         return heartbeat;
     }
+
+    /**
+     * Current number of users that have an allocated sink (may or may not have active subscriber).
+     */
+    public int getActiveUserCount() {
+        return userSinks.size();
+    }
+
+    /**
+     * Sum of current subscriber counts across all user sinks.
+     */
+    public int getActiveSubscriptionCount() {
+        return userSinks.values().stream()
+                .mapToInt(Sinks.Many::currentSubscriberCount)
+                .sum();
+    }
 }
