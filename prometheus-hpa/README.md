@@ -4,13 +4,84 @@ This directory contains the necessary configurations and scripts to set up Horiz
 
 ## Files Overview
 
+### Configuration Files
 - **prometheus-adapter-config.yaml**: Configuration for the Prometheus Adapter to expose the `sse_active_users` metric to the Kubernetes custom metrics API.
 - **prometheus-scrape-config.yaml**: Additional scrape configuration for Prometheus to collect metrics from the application.
 - **hpa-config.yaml**: HPA configuration that defines scaling rules based on the number of active users.
-- **setup-metrics-hpa.ps1**: PowerShell script to set up the metrics and HPA configuration.
-- **setup-metrics-hpa.sh**: Bash script to set up the metrics and HPA configuration.
-- **test-hpa-scaling.ps1**: PowerShell script to test the HPA by generating simulated load.
+
+### Scripts
+
+#### Installation Scripts
+- **install-complete-hpa-setup.sh**: **[NEW]** Complete installation script for fresh setups. Installs Prometheus, Prometheus Adapter, and configures everything from scratch on a new machine/cluster.
+- **setup-metrics-hpa.sh**: **[UPDATED]** Configuration update script for existing installations. Use this to update configurations when Prometheus and Prometheus Adapter are already installed.
+
+#### Testing Scripts  
 - **test-hpa-scaling.sh**: Bash script to test the HPA by generating simulated load.
+
+#### Cleanup Scripts
+- **cleanup-hpa-setup.sh**: **[NEW]** Complete cleanup script that removes all Prometheus, Prometheus Adapter components, and HPA configurations. Use this to completely uninstall everything.
+
+## Quick Start
+
+### For New Machines/Clusters (Fresh Installation)
+```bash
+# Run the complete installation script
+./install-complete-hpa-setup.sh
+```
+
+### For Existing Prometheus Installations (Update Only)
+```bash
+# Run the configuration update script
+./setup-metrics-hpa.sh
+```
+
+### To Remove Everything
+```bash
+# Run the cleanup script
+./cleanup-hpa-setup.sh
+```
+
+## What Each Script Does
+
+### install-complete-hpa-setup.sh
+This script performs a complete installation from scratch:
+1. Creates monitoring namespace
+2. Adds Helm repositories (prometheus-community)
+3. Installs Prometheus server via Helm
+4. Installs Prometheus Adapter via Helm
+5. Applies custom configurations for SSE metrics
+6. Updates Prometheus scrape configs
+7. Applies HPA configuration
+8. Verifies installation and metric availability
+
+**Requirements**: 
+- Helm installed and configured
+- kubectl configured to connect to your cluster
+- No existing Prometheus installation
+
+### setup-metrics-hpa.sh
+This script updates existing installations:
+1. Checks for existing Prometheus and Prometheus Adapter installations
+2. Updates Prometheus Adapter configuration for SSE metrics
+3. Adds SSE application scrape configs
+4. Updates Prometheus ConfigMap
+5. Restarts services to apply changes
+6. Applies HPA configuration
+
+**Requirements**:
+- Existing Prometheus server deployment named `prom-prometheus-server`
+- Existing Prometheus Adapter deployment named `prom-adapter-prometheus-adapter`
+- Both must be in the `monitoring` namespace
+
+### cleanup-hpa-setup.sh
+This script completely removes all components:
+1. Removes HPA configurations
+2. Removes additional ConfigMaps created
+3. Uninstalls Prometheus Adapter via Helm
+4. Uninstalls Prometheus Server via Helm
+5. Cleans up remaining resources
+6. Optionally removes monitoring namespace
+7. Optionally removes Helm repositories
 
 ## Changes Made to Enable Metrics-based Autoscaling
 
@@ -135,3 +206,37 @@ If the HPA shows `<unknown>` for the metric:
    # Check metrics endpoint
    kubectl exec $POD -- curl -s localhost:8080/actuator/prometheus | grep sse_active_users
    ```
+
+### Check Metric Availability
+```bash
+# Check if custom metrics API is available
+kubectl get --raw "/apis/custom.metrics.k8s.io/v1beta1"
+
+# Check specific SSE metric
+kubectl get --raw "/apis/custom.metrics.k8s.io/v1beta1/namespaces/default/pods/*/sse_active_users"
+```
+
+### Check HPA Status
+```bash
+kubectl get hpa
+kubectl describe hpa reactive-sse-local-hpa
+```
+
+### Check Prometheus Targets
+```bash
+# Port-forward to Prometheus and check targets
+kubectl port-forward -n monitoring svc/prom-prometheus-server 9090:80
+# Then visit http://localhost:9090/targets
+```
+
+### Common Issues
+1. **Metric not available**: Ensure your application is running and exposing metrics
+2. **HPA shows "unknown" metrics**: Wait a few minutes for metrics to be scraped
+3. **Scaling not working**: Check HPA events with `kubectl describe hpa`
+
+## Notes
+
+- The setup assumes your reactive-sse-local deployment is in the `default` namespace
+- Metrics collection may take 1-2 minutes to start working after setup
+- The `sse_active_users` metric should be exposed by your Spring Boot application via Micrometer
+- For production environments, adjust the target values and replica limits as needed

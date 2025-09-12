@@ -1,7 +1,39 @@
 #!/bin/bash
 # Script to configure Prometheus Adapter for SSE User Metrics Autoscaling
+# IMPORTANT: This script is for UPDATING existing Prometheus/Prometheus Adapter installations
+# For fresh installations, use: install-complete-hpa-setup.sh
 # Author: Kamruddin
 # Date: September 11, 2025
+
+echo -e "\033[0;33m============================================================\033[0m"
+echo -e "\033[0;33m    UPDATING Existing HPA Setup with Custom Metrics\033[0m"
+echo -e "\033[0;33m============================================================\033[0m"
+
+# Check if required components are installed
+echo -e "\033[0;32mChecking prerequisites...\033[0m"
+
+# Check if monitoring namespace exists
+if ! kubectl get namespace monitoring &>/dev/null; then
+    echo -e "\033[0;31mError: 'monitoring' namespace not found!\033[0m"
+    echo -e "\033[0;31mPlease run 'install-complete-hpa-setup.sh' first for fresh installation.\033[0m"
+    exit 1
+fi
+
+# Check if Prometheus server exists
+if ! kubectl get deployment prom-prometheus-server -n monitoring &>/dev/null; then
+    echo -e "\033[0;31mError: Prometheus server not found!\033[0m"
+    echo -e "\033[0;31mPlease run 'install-complete-hpa-setup.sh' first for fresh installation.\033[0m"
+    exit 1
+fi
+
+# Check if Prometheus adapter exists
+if ! kubectl get deployment prom-adapter-prometheus-adapter -n monitoring &>/dev/null; then
+    echo -e "\033[0;31mError: Prometheus adapter not found!\033[0m"
+    echo -e "\033[0;31mPlease run 'install-complete-hpa-setup.sh' first for fresh installation.\033[0m"
+    exit 1
+fi
+
+echo -e "\033[0;32mAll prerequisites found! Proceeding with configuration update...\033[0m"
 
 # Apply the prometheus adapter configuration
 echo -e "\033[0;32mStep 1: Applying Prometheus adapter configuration...\033[0m"
