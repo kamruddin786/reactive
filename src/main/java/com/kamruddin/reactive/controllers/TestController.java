@@ -25,17 +25,18 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @RequestMapping("/test")
 public class TestController {
     public static final Logger logger = LoggerFactory.getLogger(TestController.class);
-        public static final String BASE_URL = "http://reactive-sse.local";
+//        public static final String BASE_URL = "http://reactive-sse.local";
 //    public static final String BASE_URL = "http://localhost:8080";
-//    public static final String BASE_URL = "http://34.120.247.119";
+//    public static final String BASE_URL = "http://localhost:30080";
+//    public static final String BASE_URL = "http://34.36.40.216";
+    public static final String BASE_URL = "https://fs3.reflexisinc.com/beacon";
+    private static final String AUTH_TOKEN = "eMjI1NTMtMTcwMDEwMDk5LTM3NjI0OC0xODE2NDc3NDE4LV8wX2ZzM18zX180XyUzMDZiYzEzNS0xNzMzLTQ2ZmYtOGQwZC1lZWQ1MWU3ZTk3MWY";
 
     // Connection timeout in minutes (configurable)
     private static final int CONNECTION_TIMEOUT_MINUTES = 60;
     private static final int RESPONSE_TIMEOUT_MINUTES = 5;
-    private static final int BATCH_SIZE = 100; // Process connections in batches
-    private static final int BATCH_DELAY_MS = 800; // Delay between batches
-    private static final int CLIENT_CONNECTIONS = 12000;
-    private static final int MAX_CONNECTIONS = 16000;
+    private static final int BATCH_SIZE = 25; // Process connections in batches
+    private static final int BATCH_DELAY_MS = 300; // Delay between batches
 
     // Track active connections and their disposables
     private final Map<String, Disposable> activeConnections = new ConcurrentHashMap<>();
@@ -43,7 +44,7 @@ public class TestController {
 
     // Configure custom connection provider to handle high concurrency
     private final ConnectionProvider connectionProvider = ConnectionProvider.builder("custom")
-            .maxConnections(MAX_CONNECTIONS) // Increase max connections
+            .maxConnections(10000) // Increase max connections
             .maxIdleTime(Duration.ofMinutes(10)) // Keep connections alive for 10 minutes
             .maxLifeTime(Duration.ofMinutes(30)) // Maximum lifetime of 30 minutes
             .pendingAcquireTimeout(Duration.ofSeconds(60)) // Timeout for acquiring connections
@@ -82,7 +83,7 @@ public class TestController {
         connectionsActive.set(true);
 
         // Create connections in batches to avoid overwhelming the connection pool
-        Flux.range(1500, CLIENT_CONNECTIONS)
+        Flux.range(1500, 10000)
                 .buffer(BATCH_SIZE) // Process in batches of 100
                 .delayElements(Duration.ofMillis(BATCH_DELAY_MS)) // Small delay between batches
                 .flatMap(batch ->
@@ -120,7 +121,7 @@ public class TestController {
 
             // Define the logic for a single, persistent SSE connection
             Flux<MessageNotification> sseConnection = webClient.get()
-                    .uri("/api/notifications/user/{userId}/stream", userId)
+                    .uri("/api/notifications/user/{userId}/stream?authToken={}", userId, AUTH_TOKEN)
                     .retrieve()
                     .bodyToFlux(MessageNotification.class)
                     .doOnSubscribe(subscription -> logger.info("Subscribed to SSE stream for user {}", userId))

@@ -132,7 +132,7 @@
                                 <label for="sseUrl" class="form-label fw-bold">SSE Endpoint URL:</label>
                                 <input type="text" class="form-control" id="sseUrl"
                                        placeholder="Enter SSE endpoint URL (e.g., http://localhost:8080/sse/1)"
-                                       value="http://localhost:8080/sse/1">
+                                       value="https://fs3.reflexisinc.com/beacon/api/notifications/user/6500/stream">
                             </div>
                             <div class="col-md-4 d-flex align-items-end">
                                 <button class="btn btn-success me-2" id="connectBtn" onclick="connect()">
@@ -335,6 +335,20 @@
                     responses.push({
                         timestamp: new Date(),
                         type: 'REDIS_MESSAGE',
+                        data: event.data,
+                        id: event.lastEventId || null
+                    });
+                });
+
+                eventSource.addEventListener('new-message', function(event) {
+                    eventCount++;
+                    updateEventCount();
+                    updateLastEventTime();
+                    addResponse('new-message', event.data, 'primary');
+
+                    responses.push({
+                        timestamp: new Date(),
+                        type: 'new-message',
                         data: event.data,
                         id: event.lastEventId || null
                     });
