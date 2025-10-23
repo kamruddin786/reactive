@@ -2,6 +2,7 @@ package com.kamruddin.reactive.controllers;
 
 import com.kamruddin.reactive.models.MessageNotification;
 import com.kamruddin.reactive.services.MessageNotificationConsumer;
+import com.kamruddin.reactive.services.UserConnectionTracker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,6 +15,7 @@ import reactor.util.retry.Retry;
 
 import java.time.Duration;
 import java.util.Map;
+import java.util.Set;
 
 @RestController
 @RequestMapping("/api/notifications")
@@ -30,6 +32,9 @@ public class ReactiveNotificationController {
 
     @Autowired
     private MessageNotificationConsumer messageNotificationConsumer;
+
+    @Autowired
+    private UserConnectionTracker userConnectionTracker;
 
     /**
      * Reactive SSE endpoint for user-specific message notifications
@@ -76,6 +81,100 @@ public class ReactiveNotificationController {
         } catch (Exception e) {
             logger.error("Error getting connection stats: {}", e.getMessage());
             return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * Get Redis connection tracking statistics
+     */
+    @GetMapping("/connections/redis")
+    public ResponseEntity<Map<String, Object>> getRedisConnections() {
+        try {
+            Map<String, Object> redisStats = userConnectionTracker.getConnectionStats();
+            return ResponseEntity.ok(redisStats);
+        } catch (Exception e) {
+            logger.error("Error getting Redis connection stats: {}", e.getMessage());
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * Get connections for a specific user
+     */
+    @GetMapping("/connections/user/{userId}")
+    public ResponseEntity<Map<String, Object>> getUserConnections(@PathVariable Long userId) {
+        try {
+            Set<String> connections = userConnectionTracker.getUserConnections(userId);
+            boolean isConnected = userConnectionTracker.isUserConnected(userId);
+
+            Map<String, Object> result = Map.of(
+                    "userId", userId,
+                    "isConnected", isConnected,
+                    "connectedPods", connections,
+                    "connectionCount", connections.size(),
+                    "timestamp", System.currentTimeMillis()
+            );
+
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            logger.error("Error getting connections for user {}: {}", userId, e.getMessage());
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * Administrative endpoint to cleanup connections for current pod
+     */
+    @PostMapping("/admin/cleanup-pod")
+    public ResponseEntity<Map<String, Object>> cleanupCurrentPod() {
+        try {
+            String podId = System.getenv("HOSTNAME") != null ? System.getenv("HOSTNAME") : "localhost";
+            userConnectionTracker.cleanupPodConnections(podId);
+
+            Map<String, Object> result = Map.of(
+                    "status", "success",
+                    "message", "Cleaned up connections for pod: " + podId,
+                    "podId", podId,
+                    "timestamp", System.currentTimeMillis()
+            );
+
+            logger.info("Manual cleanup performed for pod: {}", podId);
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            logger.error("Error during pod cleanup: {}", e.getMessage());
+            return ResponseEntity.status(500).body(Map.of(
+                    "status", "error",
+                    "message", "Failed to cleanup pod connections",
+                    "error", e.getMessage()
+            ));
+        }
+    }
+
+    /**
+     * Administrative endpoint to cleanup connections for a specific pod
+     */
+    @PostMapping("/admin/cleanup-pod/{podId}")
+    public ResponseEntity<Map<String, Object>> cleanupSpecificPod(@PathVariable String podId) {
+        try {
+            userConnectionTracker.cleanupPodConnections(podId);
+
+            Map<String, Object> result = Map.of(
+                    "status", "success",
+                    "message", "Cleaned up connections for pod: " + podId,
+                    "podId", podId,
+                    "timestamp", System.currentTimeMillis()
+            );
+
+            logger.info("Manual cleanup performed for pod: {}", podId);
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            logger.error("Error during pod cleanup for {}: {}", podId, e.getMessage());
+            return ResponseEntity.status(500).body(Map.of(
+                    "status", "error",
+                    "message", "Failed to cleanup pod connections",
+                    "podId", podId,
+                    "error", e.getMessage()
+            ));
         }
     }
 

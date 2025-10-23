@@ -24,6 +24,10 @@ metadata:
     nginx.ingress.kubernetes.io/cors-allow-methods: "GET,POST,OPTIONS"
     nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Authorization"
 
+    # Load balancing configuration - route to pod with least connections
+    nginx.ingress.kubernetes.io/upstream-hash-by: ""
+    nginx.ingress.kubernetes.io/load-balance: "least_conn"
+
 spec:
   ingressClassName: nginx
   rules:

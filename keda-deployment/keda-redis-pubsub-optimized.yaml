@@ -1,0 +1,72 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: reactive-sse-redis-pubsub-scaler
+  namespace: default
+  labels:
+    app: reactive-sse-app
+spec:
+  scaleTargetRef:
+    name: reactive-sse-app
+  minReplicaCount: 1
+  maxReplicaCount: 20
+  pollingInterval: 15
+  cooldownPeriod: 120
+  idleReplicaCount: 1
+  triggers:
+  # Scale based on Redis pub/sub subscriber count for user:messages topic
+  - type: redis
+    metadata:
+      address: redis-service.default.svc.cluster.local:6379
+      password: mypass
+      # Use Redis PUBSUB NUMSUB to get subscriber count for your USER_MESSAGES_TOPIC
+      command: PUBSUB
+      commandArgs: NUMSUB user:messages
+      targetValue: '5'  # Scale up when more than 5 subscribers per pod
+      enableTLS: 'false'
+      activationTargetValue: '1'  # Activate scaling when at least 1 subscriber
+    authenticationRef:
+      name: redis-auth
+
+  # Scale based on Redis pub/sub subscriber count for broadcast:messages topic
+  - type: redis
+    metadata:
+      address: redis-service.default.svc.cluster.local:6379
+      password: mypass
+      command: PUBSUB
+      commandArgs: NUMSUB broadcast:messages
+      targetValue: '10'  # Scale up when more than 10 subscribers per pod for broadcasts
+      enableTLS: 'false'
+      activationTargetValue: '1'
+    authenticationRef:
+      name: redis-auth
+
+  # Scale based on Redis memory usage (indicates message backlog)
+  - type: redis
+    metadata:
+      address: redis-service.default.svc.cluster.local:6379
+      password: mypass
+      command: INFO
+      commandArgs: memory
+      # Extract used_memory_rss and scale when it exceeds threshold
+      targetValue: '104857600'  # 100MB in bytes
+      enableTLS: 'false'
+    authenticationRef:
+      name: redis-auth
+
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 30
+      - type: Pods
+        value: 2
+        periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 25
+        periodSeconds: 60

@@ -1,0 +1,79 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: reactive-sse-user-scaler
+  namespace: default
+spec:
+  scaleTargetRef:
+    name: reactive-sse-app
+  pollingInterval: 30
+  cooldownPeriod: 300
+  minReplicaCount: 1
+  maxReplicaCount: 10
+  triggers:
+  # Primary scaling trigger: Based on connected users
+  - type: metrics-api
+    metadata:
+      targetValue: "100"  # Scale up when more than 100 users per pod
+      url: "http://reactive-sse-app-service:8080/metrics/keda/user-connections"
+      valueLocation: "totalConnectedUsers"
+      method: "query"
+    authenticationRef:
+      name: keda-trigger-auth-prometheus-config
+
+  # Secondary scaling trigger: Based on connections per pod load balancing
+  - type: metrics-api
+    metadata:
+      targetValue: "150"  # Scale up when any pod has more than 150 connections
+      url: "http://reactive-sse-app-service:8080/metrics/keda/user-connections"
+      valueLocation: "avgConnectionsPerPod"
+      method: "query"
+    authenticationRef:
+      name: keda-trigger-auth-prometheus-config
+
+---
+# Alternative: Single endpoint configuration using the enhanced scaling-metrics
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: reactive-sse-enhanced-scaler
+  namespace: default
+spec:
+  scaleTargetRef:
+    name: reactive-sse-app
+  pollingInterval: 30
+  cooldownPeriod: 300
+  minReplicaCount: 1
+  maxReplicaCount: 10
+  triggers:
+  # Single trigger using the comprehensive scaling-metrics endpoint
+  - type: metrics-api
+    metadata:
+      targetValue: "1"  # Use the calculated recommendedPods value directly
+      url: "http://reactive-sse-app-service:8080/metrics/keda/scaling-metrics"
+      valueLocation: "recommendedPods"
+      method: "query"
+    authenticationRef:
+      name: keda-trigger-auth-prometheus-config
+
+---
+# External scaler configuration (more flexible)
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: reactive-sse-external-scaler
+  namespace: default
+spec:
+  scaleTargetRef:
+    name: reactive-sse-app
+  pollingInterval: 30
+  cooldownPeriod: 300
+  minReplicaCount: 1
+  maxReplicaCount: 10
+  triggers:
+  - type: external
+    metadata:
+      scalerAddress: "reactive-sse-app-service:8080"
+      endpoint: "/metrics/keda/user-connections"
+      metricName: "user-connections"
+      targetValue: "100"

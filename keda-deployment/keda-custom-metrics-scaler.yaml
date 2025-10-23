@@ -1,0 +1,95 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: reactive-sse-custom-metrics-scaler
+  namespace: default
+spec:
+  scaleTargetRef:
+    name: reactive-sse-app
+  minReplicaCount: 1
+  maxReplicaCount: 20
+  pollingInterval: 10
+  cooldownPeriod: 60
+  triggers:
+  # Scale based on your MessagePublisher topic metrics via custom endpoint
+  - type: metrics-api
+    metadata:
+      targetValue: '100'
+      url: http://reactive-sse-app-service:8080/metrics/keda/scaling-metrics
+      valueLocation: 'totalPendingMessages'
+
+  # Scale based on Redis subscriber count for your topics
+  - type: metrics-api
+    metadata:
+      targetValue: '50'
+      url: http://reactive-sse-app-service:8080/metrics/keda/scaling-metrics
+      valueLocation: 'totalActiveSubscribers'
+
+  # Scale based on message publishing rate
+  - type: prometheus
+    metadata:
+      serverAddress: http://prometheus:9090
+      metricName: message_publish_rate
+      threshold: '20'
+      query: rate(redis_messages_published_total[2m])
+
+---
+# Alternative: Direct Redis-based scaling for your specific topics
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: reactive-sse-redis-direct-scaler
+  namespace: default
+spec:
+  scaleTargetRef:
+    name: reactive-sse-app
+  minReplicaCount: 2
+  maxReplicaCount: 15
+  triggers:
+  # Monitor Redis pub/sub for your USER_MESSAGES_TOPIC
+  - type: redis
+    metadata:
+      address: redis-service:6379
+      password: mypass
+      # Use Redis PUBSUB NUMSUB command to get subscriber count
+      # This scales based on how many clients are subscribed to user:messages
+      hostFromEnv: REDIS_HOST
+      passwordFromEnv: REDIS_PASSWORD
+      databaseIndex: '0'
+      # Custom Redis command to check subscriber count
+      enableTLS: 'false'
+    authenticationRef:
+      name: redis-auth
+
+---
+# KEDA ScaledObject using external metrics from your application
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: reactive-sse-external-metrics-scaler
+  namespace: default
+spec:
+  scaleTargetRef:
+    name: reactive-sse-app
+  minReplicaCount: 1
+  maxReplicaCount: 25
+  triggers:
+  # Use external metric from your custom endpoint
+  - type: external
+    metadata:
+      scalerAddress: reactive-sse-app-service:8080
+      metricName: redis_topic_load
+      targetValue: '75'
+      query: |
+        import requests
+        import json
+        
+        response = requests.get("http://reactive-sse-app-service:8080/metrics/keda/scaling-metrics")
+        data = response.json()
+        
+        # Calculate load based on pending messages and subscribers
+        pending = data.get('totalPendingMessages', 0)
+        subscribers = data.get('totalActiveSubscribers', 0)
+        
+        # Return composite metric: pending messages + (subscribers / 10)
+        return pending + (subscribers / 10)

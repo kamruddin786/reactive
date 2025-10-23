@@ -33,24 +33,36 @@ spec:
         - name: redis-data
           mountPath: /data
         command: ["redis-server"]
-        args: ["--appendonly", "yes", "--maxmemory", "200mb", "--maxmemory-policy", "allkeys-lru"]
+        args:
+        - "--appendonly"
+        - "yes"
+        - "--maxmemory"
+        - "200mb"
+        - "--maxmemory-policy"
+        - "allkeys-lru"
+        - "--requirepass"
+        - "mypass"
         livenessProbe:
           exec:
             command:
             - redis-cli
-            - ping
+            - "-a"
+            - "mypass"
+            - "ping"
           initialDelaySeconds: 30
           periodSeconds: 10
         readinessProbe:
           exec:
             command:
             - redis-cli
-            - ping
+            - "-a"
+            - "mypass"
+            - "ping"
           initialDelaySeconds: 5
           periodSeconds: 5
       volumes:
       - name: redis-data
-        emptyDir: {}  # Use emptyDir for local development (data lost on pod restart)
+        emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
@@ -59,12 +71,11 @@ metadata:
   labels:
     app: redis-local
 spec:
+  type: ClusterIP
   selector:
     app: redis-local
   ports:
-  - name: redis
-    protocol: TCP
-    port: 6379
+  - port: 6379
     targetPort: 6379
-  type: ClusterIP
-
+    protocol: TCP
+    name: redis

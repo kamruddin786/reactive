@@ -33,6 +33,10 @@ spec:
           value: "redis-local-service"
         - name: REDIS_PORT
           value: "6379"
+        - name: REDIS_PASSWORD
+          value: "mypass"
+        - name: REDIS_URL
+          value: "redis://:mypass@redis-local-service:6379"
         - name: MONGO_HOST
           value: "mongodb-local-service"
         - name: MONGO_PORT
@@ -43,9 +47,7 @@ spec:
           value: "DEBUG"
         - name: JAVA_OPTS
           value: >
-            -XX:+UseG1GC -XX:MaxGCPauseMillis=200 
-            -Xms256m -Xmx768m -XX:+UseStringDeduplication 
-            -XX:+UseContainerSupport
+            -XX:+UseZGC -Xms256m -Xmx1g -XX:ZUncommitDelay=60
             -Dcom.sun.management.jmxremote
             -Dcom.sun.management.jmxremote.port=9696
             -Dcom.sun.management.jmxremote.rmi.port=9696
@@ -62,13 +64,13 @@ spec:
             memory: "768Mi"
             cpu: "200m"
           limits:
-            memory: "1Gi"
+            memory: "1200Mi"
             cpu: "1000m"
         livenessProbe:
           httpGet:
             path: /actuator/health
             port: 8080
-          initialDelaySeconds: 90
+          initialDelaySeconds: 30
           periodSeconds: 30
           timeoutSeconds: 10
           failureThreshold: 3
@@ -76,7 +78,7 @@ spec:
           httpGet:
             path: /actuator/health/readiness
             port: 8080
-          initialDelaySeconds: 60
+          initialDelaySeconds: 20
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 3
@@ -97,22 +99,43 @@ spec:
     port: 8080
     targetPort: 8080
     nodePort: 30080
----
-apiVersion: autoscaling/v2
-kind: HorizontalPodAutoscaler
-metadata:
-  name: reactive-sse-local-hpa
-spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: reactive-sse-local
-  minReplicas: 1
-  maxReplicas: 4  # Reduced for local environment
-  metrics:
-  - type: Resource
-    resource:
-      name: memory
-      target:
-        type: Utilization
-        averageUtilization: 85
+# ---
+# apiVersion: autoscaling/v2
+# kind: HorizontalPodAutoscaler
+# metadata:
+#   name: reactive-sse-local-hpa
+# spec:
+#   scaleTargetRef:
+#     apiVersion: apps/v1
+#     kind: Deployment
+#     name: reactive-sse-local
+#   minReplicas: 1
+#   maxReplicas: 4  # Reduced for local environment
+#   metrics:
+#   - type: Resource
+#     resource:
+#       name: memory
+#       target:
+#         type: Utilization
+#         averageUtilization: 85
+#   behavior:
+#     scaleDown:
+#       stabilizationWindowSeconds: 60  # Wait 1 minute before scaling down
+#       policies:
+#       - type: Percent
+#         value: 50  # Scale down by 50% of current replicas
+#         periodSeconds: 60  # Every 60 seconds
+#       - type: Pods
+#         value: 1  # Or scale down by 1 pod
+#         periodSeconds: 60  # Every 60 seconds
+#       selectPolicy: Max  # Use the more aggressive policy
+#     scaleUp:
+#       stabilizationWindowSeconds: 0  # Scale up immediately
+#       policies:
+#       - type: Percent
+#         value: 100  # Double the replicas
+#         periodSeconds: 15  # Every 15 seconds
+#       - type: Pods
+#         value: 2  # Or add 2 pods
+#         periodSeconds: 15  # Every 15 seconds
+#       selectPolicy: Max  # Use the more aggressive policy

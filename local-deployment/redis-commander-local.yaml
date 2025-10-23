@@ -24,7 +24,7 @@ spec:
           name: web
         env:
         - name: REDIS_HOSTS
-          value: "local:redis-local-service:6379"
+          value: "local:redis-local-service:6379:0:mypass"
         - name: HTTP_USER
           value: "admin"
         - name: HTTP_PASSWORD
@@ -32,26 +32,38 @@ spec:
         resources:
           requests:
             memory: "64Mi"
-            cpu: "25m"
+            cpu: "50m"
           limits:
             memory: "128Mi"
-            cpu: "100m"
+            cpu: "200m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8081
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8081
+          initialDelaySeconds: 10
+          periodSeconds: 10
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: redis-commander-service
+  name: redis-commander-local-service
   labels:
     app: redis-commander-local
 spec:
+  type: ClusterIP
   selector:
     app: redis-commander-local
   ports:
-  - name: web
-    protocol: TCP
+  - name: http
     port: 8081
     targetPort: 8081
-  type: ClusterIP
+    protocol: TCP
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -73,7 +85,6 @@ spec:
         pathType: Prefix
         backend:
           service:
-            name: redis-commander-service
+            name: redis-commander-local-service
             port:
               number: 8081
-

@@ -1,0 +1,37 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: reactive-sse-local-scaler
+  namespace: default
+  labels:
+    app: reactive-sse-local
+spec:
+  scaleTargetRef:
+    name: reactive-sse-local
+  minReplicaCount: 1
+  maxReplicaCount: 10  # Increased to handle more users
+  pollingInterval: 30
+  cooldownPeriod: 120
+  triggers:
+
+  # OPTION 1: Direct Redis-based scaling using a LIST (RECOMMENDED)
+  # KEDA Redis scaler works with lists, using LLEN to count connected user IDs
+  - type: redis
+    metadata:
+      address: redis-local-service.default.svc.cluster.local:6379
+      listName: 'connected_users_list'
+      listLength: '3000'
+      enableTLS: 'false'
+      databaseIndex: '0'
+    authenticationRef:
+      name: redis-auth-trigger
+    # OPTION 2: Custom HTTP endpoint scaling (EXISTING - Commented out for comparison)
+    # This uses our custom application endpoint with intelligent scaling algorithm
+    # Uncomment to use the intelligent scaling algorithm instead of simple Redis counting
+  # - type: metrics-api
+  #   metadata:
+  #     targetValue: '3000'  # Scale up when more than 3000 connected users
+  #     url: http://reactive-sse-local-service.default.svc.cluster.local:8080/metrics/keda/user-connections
+  #     valueLocation: 'totalConnectedUsers'
+  #     method: 'query'
+  #     timeout: '3000'

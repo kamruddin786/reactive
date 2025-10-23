@@ -1,0 +1,60 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: reactive-sse-redis-scaler
+  namespace: default
+spec:
+  scaleTargetRef:
+    name: reactive-sse-app
+  minReplicaCount: 1
+  maxReplicaCount: 10
+  triggers:
+  # Scale based on Redis pub/sub messages pending in your topics
+  - type: redis
+    metadata:
+      address: redis-service:6379
+      password: mypass
+      # Monitor the user messages topic from MessagePublisher
+      listName: user:messages
+      listLength: '5'
+      enableTLS: 'false'
+    authenticationRef:
+      name: redis-auth
+
+  # Alternative: Scale based on Redis stream length (if you switch to streams)
+  - type: redis-streams
+    metadata:
+      address: redis-service:6379
+      password: mypass
+      stream: user:messages:stream
+      consumerGroup: reactive-app-group
+      pendingEntriesCount: '10'
+      enableTLS: 'false'
+    authenticationRef:
+      name: redis-auth
+
+  # Scale based on active SSE connections (custom metric)
+  - type: prometheus
+    metadata:
+      serverAddress: http://prometheus:9090
+      metricName: sse_active_connections
+      threshold: '50'
+      query: sum(sse_active_connections{app="reactive-sse-app"})
+
+  # Scale based on message processing rate
+  - type: prometheus
+    metadata:
+      serverAddress: http://prometheus:9090
+      metricName: message_processing_lag
+      threshold: '100'
+      query: rate(redis_messages_published_total[5m]) - rate(redis_messages_consumed_total[5m])
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: redis-auth
+  namespace: default
+type: Opaque
+data:
+  password: bXlwYXNz  # base64 encoded "mypass"

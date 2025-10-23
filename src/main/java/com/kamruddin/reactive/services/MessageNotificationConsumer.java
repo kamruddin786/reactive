@@ -4,6 +4,7 @@ import com.kamruddin.reactive.models.Message;
 import com.kamruddin.reactive.models.MessageNotification;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Service;
 import reactor.core.Disposable;
@@ -21,6 +22,9 @@ import java.util.function.Consumer;
 public class MessageNotificationConsumer implements Consumer<Message> {
 
     private static final Logger logger = LoggerFactory.getLogger(MessageNotificationConsumer.class);
+
+    @Autowired
+    private UserConnectionTracker userConnectionTracker;
 
     // Map to store user-specific Flux sinks
     private final Map<Long, Sinks.Many<ServerSentEvent<MessageNotification>>> userSinks = new ConcurrentHashMap<>();
@@ -54,25 +58,31 @@ public class MessageNotificationConsumer implements Consumer<Message> {
 //        if (old != null) {
 //            old.tryEmitComplete();
 //        }
-
+        String podId = getHostname();
         return sink.asFlux()
                 .onBackpressureDrop(event -> {
                     logger.warn("Dropping event for user {} due to backpressure: {}", userId, event);
                 })
                 .doOnSubscribe(subscription -> {
                     logger.info("User {} subscribed to notification stream", userId);
+                    // Track connection in Redis
+                    userConnectionTracker.addUserConnection(userId, podId);
                     // Send initial connection event
                     sendConnectionEvent(userId, sink);
                     startHeartbeat(userId, sink);
                 })
                 .doOnCancel(() -> {
                     logger.warn("Client disconnected for user {}. Stream cancelled.", userId);
+                    // Remove connection from Redis
+                    userConnectionTracker.removeUserConnection(userId, podId);
                     // Explicitly trigger cleanup on cancellation
                     stopHeartbeat(userId);
                     cleanupUserSink(userId, sink);
                 })
                 .doFinally(signalType -> {
                     logger.info("Stream for user {} terminated with signal: {}. Cleaning up.", userId, signalType);
+                    // Remove connection from Redis
+                    userConnectionTracker.removeUserConnection(userId, podId);
                     stopHeartbeat(userId);
                     cleanupUserSink(userId, sink);
                 })
@@ -123,6 +133,8 @@ public class MessageNotificationConsumer implements Consumer<Message> {
                         }
                     } else {
                         logger.debug("Sending heartbeat to user: {}", userId);
+                        // Refresh Redis TTL on successful heartbeat
+                        userConnectionTracker.refreshUserConnectionTTL(userId);
                     }
                 }, error -> {
                     logger.warn("Heartbeat failed for user {}: {}", userId, error.getMessage());
@@ -268,16 +280,37 @@ public class MessageNotificationConsumer implements Consumer<Message> {
     }
 
     /**
-     * Get connection statistics
+     * Get connection statistics including Redis tracking data
      */
     public Map<String, Object> getConnectionStats() {
         Map<String, Object> stats = new ConcurrentHashMap<>();
-        stats.put("totalUsers", userSinks.size());
-        stats.put("activeStreams", userSinks.entrySet().stream()
-                .collect(java.util.stream.Collectors.toMap(
-                        e -> e.getKey().toString(),
-                        e -> e.getValue().currentSubscriberCount() > 0
-                )));
+
+        // Local memory statistics
+        stats.put("localMemory", Map.of(
+                "totalUsers", userSinks.size(),
+                "activeStreams", userSinks.entrySet().stream()
+                        .collect(java.util.stream.Collectors.toMap(
+                                e -> e.getKey().toString(),
+                                e -> e.getValue().currentSubscriberCount() > 0
+                        )),
+                "activeHeartbeats", heartbeatTasks.size()
+        ));
+
+        // Redis connection statistics
+        try {
+            Map<String, Object> redisStats = userConnectionTracker.getConnectionStats();
+            stats.put("redis", redisStats);
+        } catch (Exception e) {
+            logger.warn("Failed to get Redis connection stats: {}", e.getMessage());
+            stats.put("redis", Map.of("error", "Failed to retrieve Redis stats"));
+        }
+
+        // Current pod information
+        stats.put("podInfo", Map.of(
+                "podId", getHostname(),
+                "timestamp", System.currentTimeMillis()
+        ));
+
         return stats;
     }
 
