@@ -27,6 +27,14 @@ metadata:
     # Load balancing configuration - route to pod with least connections
     nginx.ingress.kubernetes.io/upstream-hash-by: ""
     nginx.ingress.kubernetes.io/load-balance: "least_conn"
+    
+    # Health check configuration for connection-aware routing
+    nginx.ingress.kubernetes.io/upstream-health-check: "true"
+    nginx.ingress.kubernetes.io/upstream-health-check-path: "/api/notifications/health/load-balance"
+    nginx.ingress.kubernetes.io/upstream-health-check-interval: "5s"
+    nginx.ingress.kubernetes.io/upstream-health-check-timeout: "3s"
+    nginx.ingress.kubernetes.io/upstream-health-check-passes: "1"
+    nginx.ingress.kubernetes.io/upstream-health-check-fails: "3"
 
 spec:
   ingressClassName: nginx

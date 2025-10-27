@@ -209,4 +209,86 @@ public class ReactiveNotificationController {
             return ResponseEntity.status(503).body(health);
         }
     }
+
+    /**
+     * Load-balancing health check endpoint for NGINX routing decisions
+     * Returns different HTTP status codes based on current pod's connection load only
+     */
+    @GetMapping("/health/load-balance")
+    public ResponseEntity<Map<String, Object>> loadBalanceHealthCheck() {
+        String podId = System.getenv("HOSTNAME") != null ? System.getenv("HOSTNAME") : "localhost";
+        
+        try {
+            // Get current pod's connection metrics only
+            Map<String, Object> connectionStats = messageNotificationConsumer.getConnectionStats();
+            int activeSubscriptions = messageNotificationConsumer.getActiveSubscriptionCount();
+            
+            // Extract local connection count from memory stats
+            @SuppressWarnings("unchecked")
+            Map<String, Object> localMemory = (Map<String, Object>) connectionStats.get("localMemory");
+            int currentPodConnections = localMemory != null ? 
+                (Integer) localMemory.getOrDefault("totalUsers", 0) : 0;
+            
+            // Use active subscriptions as more accurate current load
+            int actualLoad = Math.max(currentPodConnections, activeSubscriptions);
+            
+            // Determine load status based on current pod's load only
+            String loadStatus;
+            int httpStatus;
+            double loadPercentage = (actualLoad / 6000.0) * 100; // Max capacity as reference
+            
+            if (actualLoad < 5000) {
+                loadStatus = "low";
+                httpStatus = 200; // OK - Preferred for routing
+            } else if (actualLoad <= 6000) {
+                loadStatus = "medium"; 
+                httpStatus = 201; // Created - Secondary choice
+            } else {
+                loadStatus = "high";
+                httpStatus = 202; // Accepted - Last resort
+            }
+            
+            // Build response with current pod's metrics only
+            Map<String, Object> health = Map.of(
+                "status", "UP",
+                "loadStatus", loadStatus,
+                "podId", podId,
+                "currentConnections", actualLoad,
+                "activeSubscriptions", activeSubscriptions,
+                "localUsers", currentPodConnections,
+                "loadPercentage", Math.round(loadPercentage * 100.0) / 100.0,
+                "timestamp", System.currentTimeMillis(),
+                "capacity", Map.of(
+                    "low", "< 5000",
+                    "medium", "5000-6000", 
+                    "high", "> 6000"
+                )
+            );
+            
+            // Create response with custom headers for NGINX
+            return ResponseEntity.status(httpStatus)
+                .header("X-Connection-Count", String.valueOf(actualLoad))
+                .header("X-Load-Status", loadStatus)
+                .header("X-Load-Percentage", String.valueOf(Math.round(loadPercentage)))
+                .header("X-Pod-Capacity", "6000")
+                .header("X-Pod-Id", podId)
+                .body(health);
+                
+        } catch (Exception e) {
+            logger.error("Load balance health check failed: {}", e.getMessage());
+            
+            Map<String, Object> health = Map.of(
+                "podId", podId,
+                "status", "DOWN",
+                "loadStatus", "unknown",
+                "timestamp", System.currentTimeMillis(),
+                "error", e.getMessage()
+            );
+            
+            // Return 503 Service Unavailable for failed health checks
+            return ResponseEntity.status(503)
+                .header("X-Load-Status", "error")
+                .body(health);
+        }
+    }
 }

@@ -213,31 +213,33 @@ public class KedaMetricsController {
     }
 
     /**
-     * Calculate recommended pod count based on user connections
+     * Calculate recommended pod count based on user connections with updated thresholds
      */
     private int calculateUserBasedScaling(int totalUsers, int totalConnections, Map<String, Long> connectionsByPod) {
-        // Base scaling: 1 pod per 100 connected users
-        int baseScale = Math.max(1, (int) Math.ceil(totalUsers / 100.0));
+        // Updated scaling based on your load thresholds
+        // Base scaling: 1 pod per 5000 connected users (low load threshold)
+        int baseScale = Math.max(1, (int) Math.ceil(totalUsers / 5000.0));
 
-        // Load balancing consideration: if any pod has >150 connections, scale up
+        // Load balancing: if any pod has >6000 connections (high load), scale up immediately
         long maxPodConnections = connectionsByPod.values().stream().mapToLong(Long::longValue).max().orElse(0);
-        int loadBalanceScale = maxPodConnections > 150 ? baseScale + 1 : baseScale;
+        int loadBalanceScale = maxPodConnections > 6000 ? baseScale + 1 : baseScale;
 
-        // High activity scaling: if total connections > users (multiple connections per user), scale more aggressively
-        int activityScale = totalConnections > totalUsers * 1.5 ? (int) Math.ceil(totalConnections / 120.0) : baseScale;
+        // High activity scaling: for very high activity, scale more aggressively
+        int activityScale = totalConnections > totalUsers * 1.5 ? (int) Math.ceil(totalConnections / 4000.0) : baseScale;
 
         // Take the maximum of all scaling factors, but cap at 10 pods
         return Math.min(10, Math.max(Math.max(baseScale, loadBalanceScale), activityScale));
     }
 
     /**
-     * Get human-readable scaling reason for debugging
+     * Get human-readable scaling reason for debugging with updated thresholds
      */
     private String getScalingReason(int totalUsers, int totalConnections, double avgConnectionsPerPod) {
         if (totalUsers == 0) return "No active users";
-        if (totalUsers <= 50) return "Low user count (≤50)";
-        if (totalUsers <= 100) return "Moderate user count (≤100)";
-        if (avgConnectionsPerPod > 150) return "High load per pod (>150 connections/pod)";
+        if (totalUsers <= 2000) return "Low user count (≤2000)";
+        if (totalUsers <= 5000) return "Moderate user count (≤5000)";
+        if (avgConnectionsPerPod > 6000) return "High load per pod (>6000 connections/pod)";
+        if (avgConnectionsPerPod > 5000) return "Medium load per pod (>5000 connections/pod)";
         if (totalConnections > totalUsers * 1.5) return "High activity (multiple connections per user)";
         return "Standard scaling based on user count";
     }
